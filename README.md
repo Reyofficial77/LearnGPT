@@ -60,3 +60,17 @@ npm install
 npm run build
 npm run start
 ```
+## OAuth setup
+
+For Google, add `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in Vercel.
+
+For GitHub OAuth, add `NEXT_PUBLIC_GITHUB_CLIENT_ID` (or `GITHUB_CLIENT_ID`) and `GITHUB_CLIENT_SECRET` in Vercel. The client secret is used only by the server-side OAuth exchange and is never exposed to the browser.
+
+Set the GitHub OAuth App Authorization callback URL to:
+
+`https://YOUR-DOMAIN/auth/login`
+
+After changing Vercel environment variables, create a new deployment/redeploy so the deployment receives the updated environment.
+
+The login page reads the public client IDs through `/api/config`, which also makes missing environment configuration easier to diagnose.
+
