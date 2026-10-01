@@ -41,3 +41,22 @@ LearnGPT exposes three internal model names. The selected provider determines th
 - `learn-2.0-thinking` → Gemini `gemini-3.8-flash` / OpenAI `gpt-6-astra` / Anthropic `claude-fable-5-1`
 
 The browser sends only the LearnGPT model name to `/api/chat`; the server route resolves it to the provider-specific model ID.
+
+## Deployment
+
+This is a standard Next.js App Router project and can be deployed directly to Vercel.
+
+1. Push the project to your GitHub repository.
+2. Import the repository into Vercel.
+3. Add optional environment variables from `.env.example` in Vercel Project Settings.
+4. Deploy with the default Next.js build settings.
+
+Provider API keys can be entered from LearnGPT Settings and are sent only to the selected provider through `/api/chat`. For production deployments, server-side environment variables are recommended when you control the keys.
+
+### Build commands
+
+```bash
+npm install
+npm run build
+npm run start
+```

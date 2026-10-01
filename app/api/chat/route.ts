@@ -8,7 +8,7 @@ export const runtime="nodejs";
 export async function POST(req:NextRequest){
   try{
     const body=await req.json();
-    const provider=body.provider as Provider, learnModel=String(body.model||""), apiKey=String(body.apiKey||""), systemPrompt=String(body.systemPrompt||""), messages=Array.isArray(body.messages)?body.messages:[];
+    const provider=body.provider as Provider, learnModel=String(body.model||""), browserApiKey=String(body.apiKey||""), apiKey=browserApiKey || (provider==="gemini" ? process.env.GEMINI_API_KEY : provider==="openai" ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY) || "", systemPrompt=String(body.systemPrompt||""), messages=Array.isArray(body.messages)?body.messages:[];
     if(!["gemini","openai","anthropic"].includes(provider)) return NextResponse.json({error:"Unsupported provider."},{status:400});
     if(!apiKey) return NextResponse.json({error:`${provider} API key is missing. Open Settings to add it.`},{status:400});
     const model=resolveModel(provider, learnModel);
