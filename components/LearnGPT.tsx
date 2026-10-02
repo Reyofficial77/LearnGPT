@@ -1,32 +1,155 @@
 "use client";
-import {useEffect,useMemo,useRef,useState} from "react";
-import {ArrowUp,BookOpen,Check,LogIn,Menu,MessageSquare,PlusCircle,Settings,Sidebar as SidebarIcon,Trash2,User,X} from "react-feather";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, BookOpen, Check, ChevronDown, History, HelpCircle, LogOut, Menu, MessageCircle, MoreHorizontal, Paperclip, Plus, Search, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import {DEFAULT_SETTINGS, type ChatMessage, type Provider, type Settings as AppSettings} from "../lib/types";
-import {readChats,readSettings,writeChats,writeSettings} from "../lib/storage";
-import {clearUser,readUser,type ClientUser} from "../lib/oauth";
-import {LEARN_MODELS, MODEL_REGISTRY} from "../lib/models";
-import type {LearnModel} from "../lib/types";
-const labels:Record<Provider,string>={gemini:"Gemini",openai:"OpenAI",anthropic:"Anthropic"};
-type Chat={id:string;title:string;messages:ChatMessage[];updatedAt:number};
-function mergeSettings():AppSettings{const s=readSettings();return {provider:s.provider||DEFAULT_SETTINGS.provider,model:s.model||DEFAULT_SETTINGS.model,keys:{...DEFAULT_SETTINGS.keys,...s.keys},systemPrompt:s.systemPrompt||DEFAULT_SETTINGS.systemPrompt};}
-export default function LearnGPT(){
- const [user,setUser]=useState<ClientUser|null>(null),[settings,setSettings]=useState<AppSettings>(DEFAULT_SETTINGS),[chats,setChats]=useState<Chat[]>([]),[current,setCurrent]=useState<Chat|null>(null),[input,setInput]=useState(""),[loading,setLoading]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[sidebarCollapsed,setSidebarCollapsed]=useState(false),[mobileOpen,setMobileOpen]=useState(false),[status,setStatus]=useState("");
- const bottom=useRef<HTMLDivElement>(null);
- useEffect(()=>{setSettings(mergeSettings());setChats(readChats());setUser(readUser());},[]);
- useEffect(()=>{bottom.current?.scrollIntoView({behavior:"smooth"})},[current?.messages.length,loading]);
- const model=settings.model;
- const persistChats=(next:Chat[])=>{setChats(next);writeChats(next)};
- const newChat=()=>{setCurrent({id:crypto.randomUUID(),title:"New chat",messages:[],updatedAt:Date.now()});setInput("");setMobileOpen(false)};
- const send=async(prompt=input.trim())=>{if(!prompt||loading)return;let chat=current;if(!chat){chat={id:crypto.randomUUID(),title:prompt.slice(0,42),messages:[],updatedAt:Date.now()};setCurrent(chat)}const messages=[...chat.messages,{role:"user" as const,content:prompt}];const nextChat={...chat,title:chat.messages.length?chat.title:prompt.slice(0,42),messages,updatedAt:Date.now()};setCurrent(nextChat);setInput("");setLoading(true);try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:settings.provider,model,apiKey:settings.keys[settings.provider],systemPrompt:settings.systemPrompt,messages})});const data=await r.json();if(!r.ok)throw new Error(data.error||"Request failed");const finalChat={...nextChat,messages:[...messages,{role:"assistant" as const,content:data.text}],updatedAt:Date.now()};setCurrent(finalChat);persistChats([finalChat,...chats.filter(c=>c.id!==finalChat.id)]);}catch(e){setStatus(e instanceof Error?e.message:"Something went wrong.");}finally{setLoading(false)}};
- const save=()=>{writeSettings(settings);setStatus("Settings saved.");setSettingsOpen(false);setTimeout(()=>setStatus(""),1800)};
- const history=useMemo(()=>chats.filter(c=>c.messages.length),[chats]);
- return <div className={`app ${sidebarCollapsed?"sidebar-is-collapsed":""}`}>
-  <aside className={`sidebar ${sidebarCollapsed?"collapsed":""} ${mobileOpen?"open":""}`}><div className="brand-row"><a className="brand" href="/"><BookOpen size={23}/><span>LearnGPT</span></a><button className="icon-btn sidebar-close" aria-label="Close sidebar" onClick={()=>setMobileOpen(false)}><X size={18}/></button></div><button className="new-chat" onClick={newChat}><PlusCircle size={18}/>New chat</button><div className="history-title">History</div><div className="history">{history.length?history.map(c=><button className={`history-item ${current?.id===c.id?"active":""}`} key={c.id} onClick={()=>{setCurrent(c);setMobileOpen(false)}}><MessageSquare size={15}/><span>{c.title}</span></button>):<div style={{color:"var(--muted)",fontSize:12,padding:10,lineHeight:1.6}}>No conversations yet.</div>}</div><div className="account"><div className="avatar">{user?.avatar?<img src={user.avatar} alt=""/>:<User size={17}/>}</div><div className="account-info"><div className="account-name">{user?.name||"Guest mode"}</div><div className="account-email">{user?.email||"Local session"}</div></div><button className="icon-btn" title={user?"Sign out":"Login"} onClick={()=>{if(user){clearUser();setUser(null)}else location.href="/auth/login"}}>{user?<LogIn size={17}/>:<LogIn size={17}/>}</button></div><button className="new-chat" style={{marginTop:10}} onClick={()=>{localStorage.removeItem("learngpt.chats");setChats([]);setCurrent(null)}}><Trash2 size={17}/>Clear history</button></aside>
-  <main className="main"><header className="topbar"><div className="topbar-left"><button className="icon-btn sidebar-toggle" aria-label={sidebarCollapsed?"Open sidebar":"Collapse sidebar"} onClick={()=>setSidebarCollapsed(v=>!v)}><SidebarIcon size={19}/></button><button className="icon-btn mobile-menu" aria-label="Open sidebar" onClick={()=>setMobileOpen(true)}><Menu size={19}/></button><div className="model-picker"><span className="pill">{labels[settings.provider]}</span><select value={model} onChange={e=>setSettings(s=>({...s,model:e.target.value as LearnModel}))}>{LEARN_MODELS.map(m=><option key={m} value={m}>{m}</option>)}</select></div></div><div className="topbar-right"><button className="icon-btn" onClick={()=>setSettingsOpen(true)}><Settings size={18}/></button></div></header>
-   <section className="chat"><div className="messages">{!current?.messages.length?<div className="welcome"><div className="welcome-logo"><BookOpen size={30}/></div><h1>How can I help you learn?</h1><p>LearnGPT is your multi-provider learning assistant. Choose Gemini, OpenAI, or Anthropic in Settings and start learning.</p><div className="suggestions"><button className="suggestion" onClick={()=>send("Teach me JavaScript variables from the basics with a simple example.")}><b>Learn a concept</b><span>Start from zero with a guided explanation.</span></button><button className="suggestion" onClick={()=>send("Quiz me on HTML and CSS with 5 questions, one at a time.")}><b>Practice</b><span>Turn a topic into an interactive quiz.</span></button><button className="suggestion" onClick={()=>send("Help me make a 30-minute study plan for learning JavaScript tonight.")}><b>Make a plan</b><span>Build a realistic study session.</span></button></div></div>:current.messages.map((m,i)=><div className={`message ${m.role}`} key={i}><div className="message-icon">{m.role==="user"?<User size={16}/>:<BookOpen size={16}/>}</div><div><div className="bubble markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div><div className="meta">{m.role==="user"?"You":labels[settings.provider]}</div></div></div>)}{loading&&<div className="message assistant"><div className="message-icon"><BookOpen size={16}/></div><div><div className="bubble markdown thinking">Thinking…</div><div className="meta">{labels[settings.provider]}</div></div></div>}<div ref={bottom}/></div><div className="composer-wrap"><div className="composer"><textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Message LearnGPT…" rows={1}/><button className="send" disabled={loading||!input.trim()} onClick={()=>send()}><ArrowUp size={19}/></button></div><div className="disclaimer">API keys are kept in this browser and sent only to your selected provider through the LearnGPT API route.</div></div></section>
-  </main>
-  {settingsOpen&&<div className="overlay"><div className="modal"><div className="modal-head"><div><h2>API Settings</h2><p style={{color:"var(--muted)",fontSize:12}}>Gemini is the default provider.</p></div><button className="icon-btn" onClick={()=>setSettingsOpen(false)}><X size={18}/></button></div><div className="field"><label>Provider</label><select value={settings.provider} onChange={e=>setSettings(s=>({...s,provider:e.target.value as Provider}))}><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div><div className="field"><label>LearnGPT Model</label><select value={settings.model} onChange={e=>setSettings(s=>({...s,model:e.target.value as LearnModel}))}>{LEARN_MODELS.map(m=><option key={m} value={m}>{m}</option>)}</select><div style={{color:"var(--muted)",fontSize:12,marginTop:7}}>API model: <code>{MODEL_REGISTRY[settings.provider][settings.model]}</code></div></div>{(["gemini","openai","anthropic"] as Provider[]).map(p=><div className="field" key={p}><label>{labels[p]} API Key</label><input type="password" autoComplete="off" value={settings.keys[p]} onChange={e=>setSettings(s=>({...s,keys:{...s.keys,[p]:e.target.value}}))} placeholder="Enter API key"/></div>)}<div className="field"><label>Learning instructions</label><textarea rows={5} value={settings.systemPrompt} onChange={e=>setSettings(s=>({...s,systemPrompt:e.target.value}))}/></div>{status&&<div className="status ok"><Check size={14} style={{verticalAlign:"middle",marginRight:5}}/>{status}</div>}<div className="actions"><button className="btn" onClick={()=>setSettingsOpen(false)}>Cancel</button><button className="btn primary" onClick={save}>Save settings</button></div></div></div>}
- </div>
+import { DEFAULT_SETTINGS, type ChatMessage, type Provider, type Settings as AppSettings } from "../lib/types";
+import { readChats, readSettings, writeChats, writeSettings } from "../lib/storage";
+import { clearUser, readUser, type ClientUser } from "../lib/oauth";
+import { LEARN_MODELS, MODEL_REGISTRY } from "../lib/models";
+import type { LearnModel } from "../lib/types";
+
+const labels: Record<Provider, string> = { gemini: "Gemini", openai: "OpenAI", anthropic: "Anthropic" };
+type Chat = { id: string; title: string; messages: ChatMessage[]; updatedAt: number };
+type PromptCard = { icon: ReactNode; title: string; copy: string };
+
+const promptCards: PromptCard[] = [
+  { icon: <BookOpen size={19} />, title: "Learn to code", copy: "Help me build my first React component" },
+  { icon: <History size={19} />, title: "Complete a task", copy: "Help me outline and improve my assignment" },
+  { icon: <Zap size={19} />, title: "Get work done", copy: "Draft a clear project update for my team" }
+];
+
+function mergeSettings(): AppSettings {
+  const saved = readSettings();
+  return {
+    provider: saved.provider || DEFAULT_SETTINGS.provider,
+    model: saved.model || DEFAULT_SETTINGS.model,
+    keys: { ...DEFAULT_SETTINGS.keys, ...saved.keys },
+    systemPrompt: saved.systemPrompt || DEFAULT_SETTINGS.systemPrompt
+  };
+}
+
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <a className="brand" href="/" aria-label="LearnGPT">
+      <span className="brand-mark"><BookOpen size={compact ? 18 : 21} /></span>
+      <span className="brand-name">LearnGPT</span>
+    </a>
+  );
+}
+
+function SettingsModal({ settings, onChange, onClose, onSave }: { settings: AppSettings; onChange: (value: AppSettings) => void; onClose: () => void; onSave: () => void }) {
+  return (
+    <div className="settings-overlay" role="presentation" onMouseDown={onClose}>
+      <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="settings-heading">
+          <div>
+            <span className="settings-icon"><SettingsIcon size={19} /></span>
+            <div><h2 id="settings-title">AI settings</h2><p>Connect a provider and personalize how LearnGPT responds.</p></div>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close settings"><X size={19} /></button>
+        </header>
+        <div className="settings-body">
+          <label className="settings-field"><span>Default AI provider</span><select value={settings.provider} onChange={(event) => onChange({ ...settings, provider: event.target.value as Provider })}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><small>LearnGPT will use this provider for new responses.</small></label>
+          <label className="settings-field"><span>LearnGPT model</span><select value={settings.model} onChange={(event) => onChange({ ...settings, model: event.target.value as LearnModel })}>{LEARN_MODELS.map((model) => <option key={model} value={model}>{model}</option>)}</select><small>API model: {MODEL_REGISTRY[settings.provider][settings.model]}</small></label>
+          <div className="api-section">
+            <div className="section-label"><strong>API connections</strong><span>Your keys stay in this browser.</span></div>
+            {(["gemini", "openai", "anthropic"] as Provider[]).map((provider) => <label className="settings-field" key={provider}><span>{labels[provider]} API key</span><input type="password" value={settings.keys[provider]} onChange={(event) => onChange({ ...settings, keys: { ...settings.keys, [provider]: event.target.value } })} placeholder={`Enter your ${labels[provider]} API key`} autoComplete="off" /></label>)}
+          </div>
+          <label className="settings-field"><span>Learning instructions</span><textarea rows={5} value={settings.systemPrompt} onChange={(event) => onChange({ ...settings, systemPrompt: event.target.value })} placeholder="Describe how the AI should respond..." /><small>Set the tone, response style, expertise, or rules the AI should follow.</small></label>
+        </div>
+        <footer className="settings-footer"><button className="settings-cancel" onClick={onClose}>Cancel</button><button className="settings-save" onClick={onSave}><Check size={17} />Save settings</button></footer>
+      </section>
+    </div>
+  );
+}
+
+export default function LearnGPT() {
+  const [user, setUser] = useState<ClientUser | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [current, setCurrent] = useState<Chat | null>(null);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [status, setStatus] = useState("");
+  const [attachInputKey, setAttachInputKey] = useState(0);
+  const bottom = useRef<HTMLDivElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setSettings(mergeSettings()); setChats(readChats()); setUser(readUser()); }, []);
+  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [current?.messages.length, loading]);
+
+  const history = useMemo(() => chats.filter((chat) => chat.messages.length), [chats]);
+  const displayName = user?.name?.split(" ")[0] || "there";
+  const model = settings.model;
+
+  const persistChats = (next: Chat[]) => { setChats(next); writeChats(next); };
+  const newChat = () => { setCurrent({ id: crypto.randomUUID(), title: "New conversation", messages: [], updatedAt: Date.now() }); setInput(""); setStatus(""); setSidebarOpen(false); };
+
+  const send = async (raw = input) => {
+    const prompt = raw.trim();
+    if (!prompt || loading) return;
+    let chat = current;
+    if (!chat) chat = { id: crypto.randomUUID(), title: prompt.slice(0, 42), messages: [], updatedAt: Date.now() };
+    const messages = [...chat.messages, { role: "user" as const, content: prompt }];
+    const nextChat = { ...chat, title: chat.messages.length ? chat.title : prompt.slice(0, 42), messages, updatedAt: Date.now() };
+    setCurrent(nextChat); setInput(""); setSidebarOpen(false); setLoading(true); setStatus("");
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: settings.provider, model, apiKey: settings.keys[settings.provider], systemPrompt: settings.systemPrompt, messages }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Request failed");
+      const finalChat = { ...nextChat, messages: [...messages, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() };
+      setCurrent(finalChat); persistChats([finalChat, ...chats.filter((chatItem) => chatItem.id !== finalChat.id)]);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Something went wrong.");
+    } finally { setLoading(false); }
+  };
+
+  const saveSettings = () => { writeSettings(settings); setSettingsOpen(false); setStatus("Settings saved."); setTimeout(() => setStatus(""), 1800); };
+  const signOut = () => { clearUser(); setUser(null); location.href = "/auth/login"; };
+  const clearHistory = () => { localStorage.removeItem("learngpt.chats"); setChats([]); setCurrent(null); setStatus(""); };
+
+  return (
+    <main className="chat-shell">
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+        <div className="sidebar-top"><Brand compact /><button className="icon-button close-sidebar" onClick={() => setSidebarOpen(false)} aria-label="Close menu"><X size={19} /></button></div>
+        <button className="new-chat" onClick={newChat}><Plus size={18} />New conversation</button>
+        <nav className="sidebar-nav">
+          <p className="nav-label">Menu</p>
+          <button className="nav-item active"><MessageCircle size={18} />Chat</button>
+          <button className="nav-item"><History size={18} />Activity history</button>
+          <p className="nav-label history-label">Recent</p>
+          {history.length ? history.slice(0, 8).map((chat) => <button className={`history-item ${current?.id === chat.id ? "active" : ""}`} key={chat.id} onClick={() => { setCurrent(chat); setSidebarOpen(false); }}><span>{chat.title}</span><MoreHorizontal size={16} /></button>) : <div style={{ color: "#666a73", fontSize: 11, padding: "4px 10px" }}>No conversations yet.</div>}
+        </nav>
+        <div className="sidebar-bottom">
+          <button className="upgrade-card" onClick={() => setStatus("Pro upgrades are not enabled yet.")}><span className="upgrade-icon"><Star size={17} /></span><span><strong>Upgrade to Pro</strong><small>Learn without limits</small></span><ArrowRight size={16} /></button>
+          <div className="profile-row"><span className="profile-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : <User size={15} />}</span><span className="profile-copy"><strong>{user?.name || "Guest mode"}</strong><small>{user?.email || "Local session"}</small></span><ChevronDown size={17} /></div>
+          <div className="sidebar-actions"><button onClick={() => setSettingsOpen(true)}><SettingsIcon size={16} />AI settings</button><button onClick={user ? signOut : () => { location.href = "/auth/login"; }}><LogOut size={16} />{user ? "Sign out" : "Sign in"}</button><button onClick={clearHistory}><X size={16} />Clear history</button></div>
+        </div>
+      </aside>
+      {sidebarOpen && <button className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-label="Close menu" />}
+
+      <section className="chat-main">
+        <header className="chat-header">
+          <div className="header-left"><button className="icon-button menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu size={20} /></button><div><strong>AI Assistant</strong><span><i /> Online</span></div></div>
+          <div className="header-actions"><span className="header-provider">{labels[settings.provider]}</span><select className="header-model" value={model} onChange={(event) => setSettings((value) => ({ ...value, model: event.target.value as LearnModel }))}>{LEARN_MODELS.map((item) => <option key={item} value={item}>{item}</option>)}</select><button className="icon-button" aria-label="Search"><Search size={19} /></button><button className="icon-button" aria-label="Help"><HelpCircle size={19} /></button></div>
+        </header>
+
+        <div className="chat-content">
+          {!current?.messages.length ? (
+            <div className="welcome-state"><div className="ai-badge"><BookOpen size={29} /><span><Star size={12} /></span></div><p className="welcome-kicker">LEARNGPT AI</p><h1>Welcome, {displayName}.</h1><p className="welcome-copy">What can I help you accomplish today?</p><div className="prompt-grid">{promptCards.map((card) => <button key={card.title} onClick={() => send(card.copy)}><span className="prompt-icon">{card.icon}</span><strong>{card.title}</strong><small>{card.copy}</small><ArrowRight size={17} className="prompt-arrow" /></button>)}</div></div>
+          ) : (
+            <div className="conversation">{current.messages.map((message, index) => message.role === "user" ? <div className="message-group" key={`${message.role}-${index}`}><div className="user-message"><span>{message.content}</span><span className="profile-avatar small">{user?.avatar ? <img src={user.avatar} alt="" /> : <User size={14} />}</span></div></div> : <div className="message-group" key={`${message.role}-${index}`}><div className="ai-message"><span className="message-ai-icon"><BookOpen size={18} /></span><div><strong>LearnGPT</strong><div className="markdown-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div></div></div></div>)}{loading && <div className="message-group"><div className="ai-message"><span className="message-ai-icon"><BookOpen size={18} /></span><div><strong>LearnGPT</strong><div className="markdown-content"><p className="thinking-text">Thinking…</p></div></div></div></div>}<div ref={bottom} /></div>
+          )}
+          {status && <div className="chat-status">{status}</div>}
+        </div>
+
+        <div className="composer-zone"><div className="composer"><button className="attach-button" aria-label="Attach file" onClick={() => attachRef.current?.click()}><Paperclip size={19} /></button><input key={attachInputKey} ref={attachRef} type="file" hidden onChange={() => { setAttachInputKey((key) => key + 1); setStatus("File attachment is ready to be connected to the chat API."); }} /><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} placeholder="Ask anything, start a task, or describe what you're working on..." /><button className="send-button" disabled={!input.trim() || loading} onClick={() => send()} aria-label="Send message"><Send size={18} /></button></div><p>LearnGPT can make mistakes. Double-check important information.</p></div>
+      </section>
+
+      {settingsOpen && <SettingsModal settings={settings} onChange={setSettings} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />}
+    </main>
+  );
 }
