@@ -1,6 +1,6 @@
 "use client";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, BookOpen, Check, ChevronDown, History, HelpCircle, LogOut, Menu, MessageCircle, MoreHorizontal, Paperclip, Plus, Search, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
+import { ArrowRight, BookOpen, Check, ChevronDown, List, HelpCircle, LogOut, Menu, MessageCircle, MoreHorizontal, Paperclip, Plus, Search, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DEFAULT_SETTINGS, type ChatMessage, type Provider, type Settings as AppSettings } from "../lib/types";
@@ -15,7 +15,7 @@ type PromptCard = { icon: ReactNode; title: string; copy: string };
 
 const promptCards: PromptCard[] = [
   { icon: <BookOpen size={19} />, title: "Learn to code", copy: "Help me build my first React component" },
-  { icon: <History size={19} />, title: "Complete a task", copy: "Help me outline and improve my assignment" },
+  { icon: <List size={19} />, title: "Complete a task", copy: "Help me outline and improve my assignment" },
   { icon: <Zap size={19} />, title: "Get work done", copy: "Draft a clear project update for my team" }
 ];
 
@@ -119,7 +119,7 @@ export default function LearnGPT() {
         <nav className="sidebar-nav">
           <p className="nav-label">Menu</p>
           <button className="nav-item active"><MessageCircle size={18} />Chat</button>
-          <button className="nav-item"><History size={18} />Activity history</button>
+          <button className="nav-item"><List size={18} />Activity history</button>
           <p className="nav-label history-label">Recent</p>
           {history.length ? history.slice(0, 8).map((chat) => <button className={`history-item ${current?.id === chat.id ? "active" : ""}`} key={chat.id} onClick={() => { setCurrent(chat); setSidebarOpen(false); }}><span>{chat.title}</span><MoreHorizontal size={16} /></button>) : <div style={{ color: "#666a73", fontSize: 11, padding: "4px 10px" }}>No conversations yet.</div>}
         </nav>
