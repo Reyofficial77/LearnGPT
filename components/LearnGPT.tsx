@@ -1,6 +1,7 @@
 "use client";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, BookOpen, Check, ChevronDown, List, HelpCircle, LogOut, Menu, MessageCircle, MoreHorizontal, Paperclip, Plus, Search, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
+import { usePathname, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DEFAULT_SETTINGS, type ChatMessage, type Provider, type Settings as AppSettings } from "../lib/types";
@@ -16,6 +17,10 @@ const promptCards: PromptCard[] = [
   { icon: <List size={19} />, title: "Complete a task", copy: "Help me outline and improve my assignment" },
   { icon: <Zap size={19} />, title: "Get work done", copy: "Draft a clear project update for my team" }
 ];
+
+const CHAT_PATH = /^\/chat\/([A-Za-z0-9-]+)\/?$/;
+// API rows may come without `messages` (e.g. a freshly created chat) -> always normalize.
+function normalizeChat(raw: any): Chat { return { id: raw.id, title: raw.title || "New conversation", messages: Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({ role: m.role, content: m.content })) : [], updatedAt: raw.updatedAt ? new Date(raw.updatedAt).getTime() : Date.now() }; }
 
 function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved, keys: DEFAULT_SETTINGS.keys }; }
 
@@ -56,30 +61,47 @@ export default function LearnGPT() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [status, setStatus] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const routeChatId = CHAT_PATH.exec(pathname || "")?.[1] ?? null;
+  const chatsRef = useRef<Chat[]>([]);
+  const busyRef = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); setChats(data.chats || []); } if (settingsRes.ok) { const data = await settingsRes.json(); setSettings(mergeSettings(data.settings)); } })().catch(() => setStatus("Could not load your workspace.")); }, []);
+  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } if (settingsRes.ok) { const data = await settingsRes.json(); setSettings(mergeSettings(data.settings)); } setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
+  useEffect(() => { chatsRef.current = chats; }, [chats]);
+  // Keep the open conversation in sync with the URL (/chat/[id]) — direct visits, refresh, back/forward.
+  useEffect(() => {
+    if (!loaded || busyRef.current) return;
+    if (!routeChatId) { if (current) setCurrent(null); return; }
+    if (current?.id === routeChatId) return;
+    const found = chatsRef.current.find((chat) => chat.id === routeChatId);
+    if (found) { setCurrent(found); setStatus(""); }
+    else { setCurrent(null); setStatus("Conversation not found."); router.replace("/"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeChatId, loaded]);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [current?.messages.length, loading]);
   const history = useMemo(() => chats.filter((chat) => chat.messages.length), [chats]);
   const displayName = user?.name?.split(" ")[0] || "there";
   const model = settings.model;
 
-  const newChat = () => { setCurrent(null); setInput(""); setStatus(""); setSidebarOpen(false); };
-  const createChat = async (title: string) => { const response = await fetch("/api/chats", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ title }) }); if (!response.ok) throw new Error("Could not create conversation."); const data=await response.json(); setChats((items)=>[data.chat,...items]); return data.chat as Chat; };
+  const newChat = () => { setCurrent(null); setInput(""); setStatus(""); setSidebarOpen(false); if (routeChatId) router.push("/"); };
+  const createChat = async (title: string) => { const response = await fetch("/api/chats", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ title }) }); if (!response.ok) throw new Error("Could not create conversation."); const data=await response.json(); const chat=normalizeChat(data.chat); setChats((items)=>[chat,...items]); return chat; };
   const send = async (raw = input) => {
-    const prompt = raw.trim(); if (!prompt || loading) return; setLoading(true); setStatus("");
+    const prompt = raw.trim(); if (!prompt || loading) return; setLoading(true); setStatus(""); busyRef.current = true;
     try {
       let chat = current; if (!chat) chat = await createChat(prompt.slice(0,80));
-      const messages = [...chat.messages, { role:"user" as const, content:prompt }]; const optimistic={...chat,title:chat.messages.length?chat.title:prompt.slice(0,80),messages,updatedAt:Date.now()}; setCurrent(optimistic); setInput(""); setSidebarOpen(false);
+      const messages = [...chat.messages, { role:"user" as const, content:prompt }]; const optimistic={...chat,title:chat.messages.length?chat.title:prompt.slice(0,80),messages,updatedAt:Date.now()}; setCurrent(optimistic); setInput(""); setSidebarOpen(false); if (routeChatId !== chat.id) router.push(`/chat/${chat.id}`);
       const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chatId:chat.id,provider:settings.provider,model,systemPrompt:settings.systemPrompt,messages})}); const data=await response.json(); if(!response.ok) throw new Error(data.error||"Request failed");
       const finalChat={...optimistic,messages:[...messages,{role:"assistant" as const,content:data.text}],updatedAt:Date.now()}; setCurrent(finalChat); setChats((items)=>[finalChat,...items.filter((item)=>item.id!==finalChat.id)]);
-    } catch(error){ setStatus(error instanceof Error?error.message:"Something went wrong."); } finally { setLoading(false); }
+    } catch(error){ setStatus(error instanceof Error?error.message:"Something went wrong."); } finally { busyRef.current = false; setLoading(false); }
   };
   const saveSettings = async () => { const response=await fetch("/api/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:settings.provider,model:settings.model,systemPrompt:settings.systemPrompt})}); if(!response.ok){setStatus("Could not save settings.");return;} setSettingsOpen(false); setStatus("Settings saved."); setTimeout(()=>setStatus(""),1800); };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
-  const deleteChat = async (id:string) => { const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id)setCurrent(null);} };
-  const clearHistory = async () => { await Promise.all(chats.map((chat)=>fetch(`/api/chats/${chat.id}`,{method:"DELETE"}))); setChats([]);setCurrent(null);setStatus(""); };
+  const deleteChat = async (id:string) => { const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){setCurrent(null);router.push("/");}} };
+  const clearHistory = async () => { await Promise.all(chats.map((chat)=>fetch(`/api/chats/${chat.id}`,{method:"DELETE"}))); setChats([]);setCurrent(null);setStatus("");if(routeChatId)router.push("/"); };
 
   if (!user) return <main className="chat-shell"><div className="loading-screen"><div className="ai-badge"><BookOpen size={25}/></div><strong>Loading your LearnGPT workspace…</strong></div></main>;
   return <main className="chat-shell">
@@ -87,7 +109,7 @@ export default function LearnGPT() {
       <div className="sidebar-top"><Brand compact/><button className="icon-button close-sidebar" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"><X size={19}/></button></div>
       <button className="new-chat" onClick={newChat}><Plus size={18}/>New conversation</button>
       <nav className="sidebar-nav"><p className="nav-label">Workspace</p><button className="nav-item active"><MessageCircle size={18}/>Chat</button><button className="nav-item" onClick={()=>setStatus(`${history.length} saved conversations`)}><List size={18}/>Activity history<span className="nav-count">{history.length}</span></button><p className="nav-label history-label">Recent</p>
-      {history.length ? history.slice(0,10).map((chat)=><div className={`history-row ${current?.id===chat.id?"active":""}`} key={chat.id}><button className="history-item" onClick={()=>{setCurrent(chat);setSidebarOpen(false)}}><span>{chat.title}</span></button><button className="history-delete" onClick={()=>deleteChat(chat.id)} aria-label={`Delete ${chat.title}`}><X size={14}/></button></div>) : <div className="empty-history"><MessageCircle size={17}/><span>Your saved chats will appear here.</span></div>}</nav>
+      {history.length ? history.slice(0,10).map((chat)=><div className={`history-row ${current?.id===chat.id?"active":""}`} key={chat.id}><button className="history-item" onClick={()=>{setCurrent(chat);setSidebarOpen(false);router.push(`/chat/${chat.id}`)}}><span>{chat.title}</span></button><button className="history-delete" onClick={()=>deleteChat(chat.id)} aria-label={`Delete ${chat.title}`}><X size={14}/></button></div>) : <div className="empty-history"><MessageCircle size={17}/><span>Your saved chats will appear here.</span></div>}</nav>
       <div className="sidebar-bottom"><div className="upgrade-card"><span className="upgrade-icon"><Star size={17}/></span><span><strong>LearnGPT workspace</strong><small>Chats are saved securely</small></span></div><div className="profile-row"><span className="profile-avatar">{user.avatar?<img src={user.avatar} alt=""/>:<User size={15}/>}</span><span className="profile-copy"><strong>{user.name}</strong><small>{user.email}</small></span></div><div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={16}/>AI settings</button><button onClick={signOut}><LogOut size={16}/>Sign out</button><button onClick={clearHistory}><X size={16}/>Clear history</button></div></div>
     </aside>
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"/>}
