@@ -29,3 +29,9 @@ For local development, use your local URL, for example `http://localhost:3000/ap
 ## Database
 
 The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, sessions, chats, messages, and settings.
+
+## Chat features
+
+- Image attachments (up to 4 per message; resized to JPEG in the browser) are stored on the message as JSON — migration `202610030001_message_images` runs automatically on build.
+- Code blocks are syntax-highlighted. `html` / `svg` blocks get a sandboxed live preview (no `allow-same-origin`).
+- When asked for a file, the AI replies with a ```` ```file:name.ext ```` block, rendered as a downloadable card (text-based formats only).

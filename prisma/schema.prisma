@@ -49,6 +49,7 @@ model Message {
   chatId    String
   role      String
   content   String   @db.Text
+  images    Json?
   createdAt DateTime @default(now())
   chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
   @@index([chatId, createdAt])
