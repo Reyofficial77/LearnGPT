@@ -1,10 +1,12 @@
 "use client";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, BookOpen, Check, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
+import { ArrowDown, ArrowRight, BookOpen, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
+import SettingsModal from "./SettingsModal";
 import { DEFAULT_SETTINGS, type ChatMessage, type Provider, type Settings as AppSettings } from "../lib/types";
-import { LEARN_MODELS, MODEL_REGISTRY } from "../lib/models";
+import { LEARN_MODELS } from "../lib/models";
+import { readKeys, writeKeys } from "../lib/storage";
 import type { LearnModel } from "../lib/types";
 
 const labels: Record<Provider, string> = { gemini: "Gemini", openai: "OpenAI", anthropic: "Anthropic" };
@@ -54,33 +56,11 @@ function buildPayload(msgs: ChatMessage[]) {
   return msgs.map((m, i) => ({ role: m.role, content: m.content, images: keep.has(i) ? m.images : undefined, imageCount: m.images?.length || 0 }));
 }
 
-function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved, keys: DEFAULT_SETTINGS.keys }; }
+// Provider API keys never come from the server: they are read from this browser (see lib/storage.ts).
+function mergeSettings(saved: Partial<AppSettings> = {}, keys: AppSettings["keys"] = DEFAULT_SETTINGS.keys): AppSettings { return { ...DEFAULT_SETTINGS, ...saved, keys }; }
 
 function Brand({ compact = false, onNavigate }: { compact?: boolean; onNavigate?: () => void }) {
   return <a className="brand" href="/" aria-label="LearnGPT" onClick={onNavigate ? (event) => { event.preventDefault(); onNavigate(); } : undefined}><span className="brand-mark"><BookOpen size={compact ? 18 : 21} /></span><span className="brand-name">LearnGPT</span></a>;
-}
-
-function SettingsModal({ settings, onChange, onClose, onSave }: { settings: AppSettings; onChange: (value: AppSettings) => void; onClose: () => void; onSave: () => void }) {
-  return (
-    <div className="settings-overlay" role="presentation" onMouseDown={onClose}>
-      <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="settings-heading">
-          <div>
-            <span className="settings-icon"><SettingsIcon size={19} /></span>
-            <div><h2 id="settings-title">AI settings</h2><p>Connect a provider and personalize how LearnGPT responds.</p></div>
-          </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close settings"><X size={19} /></button>
-        </header>
-        <div className="settings-body">
-          <label className="settings-field"><span>Default AI provider</span><select value={settings.provider} onChange={(event) => onChange({ ...settings, provider: event.target.value as Provider })}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><small>LearnGPT will use this provider for new responses.</small></label>
-          <label className="settings-field"><span>LearnGPT model</span><select value={settings.model} onChange={(event) => onChange({ ...settings, model: event.target.value as LearnModel })}>{LEARN_MODELS.map((model) => <option key={model} value={model}>{model}</option>)}</select><small>API model: {MODEL_REGISTRY[settings.provider][settings.model]}</small></label>
-          <div className="api-section"><div className="section-label"><strong>Server AI connection</strong><span>Managed by Vercel environment variables.</span></div><p className="settings-note">LearnGPT now keeps provider keys on the server. Configure <code>GEMINI_API_KEY</code>, <code>OPENAI_API_KEY</code>, or <code>ANTHROPIC_API_KEY</code> in Vercel instead of storing secrets in the browser.</p></div>
-          <label className="settings-field"><span>Learning instructions</span><textarea rows={5} value={settings.systemPrompt} onChange={(event) => onChange({ ...settings, systemPrompt: event.target.value })} placeholder="Describe how the AI should respond..." /><small>Set the tone, response style, expertise, or rules the AI should follow.</small></label>
-        </div>
-        <footer className="settings-footer"><button className="settings-cancel" onClick={onClose}>Cancel</button><button className="settings-save" onClick={onSave}><Check size={17} />Save settings</button></footer>
-      </section>
-    </div>
-  );
 }
 
 export default function LearnGPT() {
@@ -108,7 +88,7 @@ export default function LearnGPT() {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } if (settingsRes.ok) { const data = await settingsRes.json(); setSettings(mergeSettings(data.settings)); } setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
+  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved, readKeys(session.user.id))); setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
   // Keep the open conversation in sync with the URL (/chat/[id]) — direct visits, refresh, back/forward.
   useEffect(() => {
@@ -161,6 +141,8 @@ export default function LearnGPT() {
   };
   const send = async (raw = input, attached = images) => {
     const prompt = raw.trim(); if ((!prompt && !attached.length) || loading || attaching) return;
+    // BYOK: no key for the selected provider -> open Settings instead of sending a request that cannot work.
+    if (!settings.keys[settings.provider]?.trim()) { setStatus(`Add your ${labels[settings.provider]} API key in Settings to start chatting.`); setSettingsOpen(true); return; }
     setLoading(true); setStatus(""); busyRef.current = true; stickRef.current = true;
     let chat: Chat | null = current;
     try {
@@ -169,9 +151,9 @@ export default function LearnGPT() {
       const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}) };
       const messages = [...chat.messages, userMessage]; const optimistic = { ...chat, title: chat.messages.length ? chat.title : title, messages, updatedAt: Date.now() };
       setCurrent(optimistic); setInput(""); setImages([]); setSidebarOpen(false); if (routeChatId !== chat.id) goTo(`/chat/${chat.id}`);
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, provider: settings.provider, model, systemPrompt: settings.systemPrompt, messages: buildPayload(messages) }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, provider: settings.provider, model, apiKey: settings.keys[settings.provider], systemPrompt: settings.systemPrompt, messages: buildPayload(messages) }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(response.status === 413 ? "The images are too large to send. Try fewer or smaller images." : data.error || `Request failed (${response.status})`);
+      if (!response.ok) { if (data.code === "missing_key" || data.code === "invalid_key") setSettingsOpen(true); throw new Error(response.status === 413 ? "The images are too large to send. Try fewer or smaller images." : data.error || `Request failed (${response.status})`); }
       const finalChat = { ...optimistic, messages: [...messages, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)]);
     } catch (error) {
       // Nothing was saved on failure: put the user's message back in the composer instead of making them retype it.
@@ -180,7 +162,16 @@ export default function LearnGPT() {
       setStatus(error instanceof Error ? error.message : "Something went wrong.");
     } finally { busyRef.current = false; setLoading(false); }
   };
-  const saveSettings = async () => { const response=await fetch("/api/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:settings.provider,model:settings.model,systemPrompt:settings.systemPrompt})}); if(!response.ok){setStatus("Could not save settings.");return;} setSettingsOpen(false); setStatus("Settings saved."); setTimeout(()=>setStatus(""),1800); };
+  // Server stores provider/model/instructions. API keys are written to this browser only.
+  const saveSettings = async (next: AppSettings): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: next.provider, model: next.model, systemPrompt: next.systemPrompt }) });
+      if (!response.ok) return "Could not save settings. Please try again.";
+    } catch { return "Could not reach the server. Please try again."; }
+    const keysStored = user ? writeKeys(user.id, next.keys) : false;
+    setSettings(next); setSettingsOpen(false); setStatus(keysStored ? "Settings saved." : "Settings saved, but your browser blocked storing the API keys, so they will be forgotten when you close this tab."); setTimeout(() => setStatus(""), keysStored ? 1800 : 6000);
+    return null;
+  };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
   const deleteChat = async (id:string) => { const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){setCurrent(null);goTo("/");}} };
   const clearHistory = async () => { await Promise.all(chats.map((chat)=>fetch(`/api/chats/${chat.id}`,{method:"DELETE"}))); setChats([]);setCurrent(null);setStatus("");if(routeChatId)goTo("/"); };
@@ -211,5 +202,5 @@ export default function LearnGPT() {
         </div>
         <p>Your chats are saved to your LearnGPT account. LearnGPT can make mistakes.</p>
       </div>
-    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label="Close image" onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} onChange={setSettings} onClose={()=>setSettingsOpen(false)} onSave={saveSettings}/>}</main>;
+    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label="Close image" onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} onClose={()=>setSettingsOpen(false)} onSave={saveSettings}/>}</main>;
 }

@@ -1638,3 +1638,42 @@ button {
 .hljs-meta { color: #8fa1b8; }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
+
+/* ---------- Settings: bring-your-own API keys ---------- */
+.key-alert{display:flex;align-items:flex-start;gap:8px;margin:-8px 0 0;padding:10px 12px;border:1px solid rgba(251,191,36,.25);border-radius:9px;color:#fcd34d;background:rgba(251,191,36,.07);font-size:11px;line-height:1.55}
+.key-alert svg{flex:0 0 auto;margin-top:2px}
+.key-privacy{display:flex;align-items:flex-start;gap:8px;margin:0;color:#8b8f98;font-size:10px;line-height:1.65}
+.key-privacy svg{flex:0 0 auto;margin-top:3px;color:#7fb6ff}
+.key-card{display:grid;gap:10px;padding:13px;border:1px solid var(--line);border-radius:11px;background:#25262a;transition:border-color 160ms ease}
+.key-card.is-default{border-color:rgba(59,145,255,.4)}
+.key-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.key-card-head label{display:flex;align-items:center;gap:7px;color:#e2e3e8;font-size:12px;font-weight:650}
+.key-card-head label svg{color:#8fbfff}
+.key-card-head em{padding:2px 7px;border-radius:999px;color:#8fbfff;background:rgba(38,132,255,.12);font-size:9px;font-style:normal;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
+.key-badge{padding:3px 8px;border-radius:999px;color:#8b8f98;background:rgba(255,255,255,.05);font-size:9px;font-weight:650}
+.key-badge.on{color:#86efac;background:rgba(34,197,94,.12)}
+.key-input-row{display:flex;gap:7px}
+.key-input-row input{flex:1;min-width:0;height:41px;padding:0 12px;border:1px solid var(--line);border-radius:9px;outline:0;color:var(--text);background:#1d1e21;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;transition:border-color 160ms ease}
+.key-input-row input:focus{border-color:var(--blue)}
+.key-input-row input::placeholder{color:#5f626a}
+.key-icon-button{width:41px;height:41px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line);border-radius:9px;color:#9b9da5;background:#1d1e21;cursor:pointer}
+.key-icon-button:hover{color:#fff;border-color:rgba(255,255,255,.2)}
+.key-card-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.key-card-actions a{display:inline-flex;align-items:center;gap:5px;color:#7fb6ff;font-size:10px;text-decoration:none}
+.key-card-actions a:hover{text-decoration:underline}
+.key-action-group{display:flex;gap:7px}
+.key-action-group button,.key-clear-all{height:30px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 11px;border:1px solid var(--line);border-radius:8px;color:#c7c9cf;background:transparent;font:inherit;font-size:10px;font-weight:650;cursor:pointer}
+.key-action-group button:hover:not(:disabled),.key-clear-all:hover{background:rgba(255,255,255,.05)}
+.key-action-group button.danger:hover:not(:disabled),.key-clear-all:hover{color:#fca5a5;border-color:rgba(239,68,68,.3)}
+.key-action-group button:disabled{opacity:.4;cursor:not-allowed}
+.key-clear-all{justify-self:start;color:#9b9da5}
+.key-note{display:flex;align-items:flex-start;gap:7px;margin:0;font-size:10px;line-height:1.55}
+.key-note svg{flex:0 0 auto;margin-top:2px}
+.key-note.success{color:#86efac}
+.key-note.error{color:#fca5a5}
+.key-note.warning{color:#fcd34d}
+.key-spin{animation:spin 1s linear infinite}
+.settings-save:disabled{opacity:.5;cursor:not-allowed}
+.settings-save-error{display:flex;align-items:center;gap:6px;margin:0 auto 0 0;color:#fca5a5;font-size:10px;line-height:1.4}
+.settings-save-error svg{flex:0 0 auto}
+@media(max-width:640px){.settings-footer{flex-wrap:wrap}.settings-save-error{flex:1 0 100%;margin-bottom:2px}.key-card-actions{align-items:flex-start}}

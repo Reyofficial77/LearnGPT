@@ -7,6 +7,8 @@ import { resolveModel } from "../../../lib/models";
 import { prisma } from "../../../lib/prisma";
 import { getSessionUser } from "../../../lib/server-auth";
 import { APP_CAPABILITIES } from "../../../lib/ai-instructions";
+import { API_KEY_PATTERN, PROVIDER_META } from "../../../lib/providers";
+import { describeAiError } from "../../../lib/ai-errors";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -64,18 +66,23 @@ async function persist(chatId: string, userId: string, messages: Msg[], assistan
 }
 
 export async function POST(req: NextRequest) {
+  let provider = "" as Provider;
+  let apiKey = "";
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
     const body = await req.json();
-    const provider = body.provider as Provider;
+    provider = body.provider as Provider;
     const learnModel = String(body.model || "");
-    const apiKey = (provider === "gemini" ? process.env.GEMINI_API_KEY : provider === "openai" ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY) || "";
+    // BYOK: the key belongs to the user. It arrives with this request only, is used for this single
+    // provider call, and is never stored in the database, never logged and never read from env vars.
+    apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
     const systemPrompt = [String(body.systemPrompt || ""), APP_CAPABILITIES].filter(Boolean).join("\n\n");
     const messages = cleanMessages(body.messages);
     const chatId = body.chatId ? String(body.chatId) : "";
     if (!["gemini", "openai", "anthropic"].includes(provider)) return NextResponse.json({ error: "Unsupported provider." }, { status: 400 });
-    if (!apiKey) return NextResponse.json({ error: `${provider} API key is missing. Open Settings to add it.` }, { status: 400 });
+    if (!apiKey) return NextResponse.json({ error: `Add your ${PROVIDER_META[provider].label} API key in Settings to start chatting.`, code: "missing_key" }, { status: 400 });
+    if (!API_KEY_PATTERN.test(apiKey)) return NextResponse.json({ error: `Your ${PROVIDER_META[provider].label} API key looks invalid. Open Settings and paste it again.`, code: "invalid_key" }, { status: 400 });
     if (!messages.length) return NextResponse.json({ error: "No messages to send." }, { status: 400 });
     const model = resolveModel(provider, learnModel);
     if (!model) return NextResponse.json({ error: "Invalid LearnGPT model." }, { status: 400 });
@@ -114,7 +121,7 @@ export async function POST(req: NextRequest) {
     if (chatId) await persist(chatId, user.id, messages, text);
     return NextResponse.json({ text });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The AI request failed.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const info = describeAiError(provider, error, apiKey);
+    return NextResponse.json({ error: info.message, ...(info.code ? { code: info.code } : {}) }, { status: info.status });
   }
 }
