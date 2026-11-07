@@ -1,0 +1,5 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "../../../../lib/prisma"; import { getSessionUser } from "../../../../lib/server-auth";
+export const runtime="nodejs";
+export async function DELETE(_:NextRequest,{params}:{params:Promise<{id:string}>}){const user=await getSessionUser();if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});const {id}=await params;const chat=await prisma.chat.findFirst({where:{id,userId:user.id}});if(!chat)return NextResponse.json({error:"Chat not found."},{status:404});await prisma.chat.delete({where:{id}});return NextResponse.json({ok:true});}
+export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){const user=await getSessionUser();if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});const {id}=await params;const body=await req.json();const chat=await prisma.chat.findFirst({where:{id,userId:user.id}});if(!chat)return NextResponse.json({error:"Chat not found."},{status:404});const updated=await prisma.chat.update({where:{id},data:{title:body.title?String(body.title).slice(0,80):undefined}});return NextResponse.json({chat:updated});}
