@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { AlertCircle, Check, Loader, Settings as SettingsIcon, X } from "react-feather";
-import type { LearnModel, Settings as AppSettings } from "../lib/types";
-import { LEARN_MODELS, MODEL_LABELS } from "../lib/models";
+import type { Settings as AppSettings } from "../lib/types";
 
 type Props = {
   settings: AppSettings;
@@ -37,20 +36,12 @@ export default function SettingsModal({ settings, onClose, onSave }: Props) {
         <header className="settings-heading">
           <div>
             <span className="settings-icon"><SettingsIcon size={19} /></span>
-            <div><h2 id="settings-title">AI settings</h2><p>Choose a model and how LearnGPT should respond.</p></div>
+            <div><h2 id="settings-title">AI settings</h2><p>Customize how LearnGPT should respond.</p></div>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close settings"><X size={19} /></button>
         </header>
 
         <div className="settings-body">
-          <label className="settings-field">
-            <span>LearnGPT model</span>
-            <select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value as LearnModel })}>
-              {LEARN_MODELS.map((model) => <option key={model} value={model}>{MODEL_LABELS[model]}</option>)}
-            </select>
-            <small>No API key needed. Just pick a model and start chatting.</small>
-          </label>
-
           <label className="settings-field">
             <span>Learning instructions</span>
             <textarea rows={5} value={draft.systemPrompt} onChange={(event) => setDraft({ ...draft, systemPrompt: event.target.value })} placeholder="Describe how the AI should respond..." />

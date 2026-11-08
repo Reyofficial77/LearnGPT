@@ -1,6 +1,6 @@
 "use client";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Trash2, User, X, Zap } from "react-feather";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Trash2, User, X, Zap, ChevronDown, FileText } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import SettingsModal from "./SettingsModal";
@@ -77,6 +77,9 @@ export default function LearnGPT() {
   const busyRef = useRef(false);
   const [images, setImages] = useState<string[]>([]);
   const [attaching, setAttaching] = useState(false);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [documents, setDocuments] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -84,6 +87,7 @@ export default function LearnGPT() {
   const stickRef = useRef(true);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
+  const documentRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved)); setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
@@ -118,7 +122,7 @@ export default function LearnGPT() {
   const displayName = user?.name?.split(" ")[0] || "there";
   const model = settings.model;
 
-  const newChat = () => { setCurrent(null); setInput(""); setImages([]); setStatus(""); setSidebarOpen(false); if (routeChatId) goTo("/"); };
+  const newChat = () => { setCurrent(null); setInput(""); setImages([]); setDocuments([]); setStatus(""); setSidebarOpen(false); if (routeChatId) goTo("/"); };
   const createChat = async (title: string) => { const response = await fetch("/api/chats", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ title }) }); if (!response.ok) throw new Error("Could not create conversation."); const data=await response.json(); const chat=normalizeChat(data.chat); setChats((items)=>[chat,...items]); return chat; };
   const addFiles = async (files: FileList | File[]) => {
     const list = Array.from(files).filter((file) => file.type.startsWith("image/"));
@@ -136,8 +140,27 @@ export default function LearnGPT() {
       if (list.length > room) setStatus(`Max ${MAX_IMAGES} images per message — extra images were skipped.`);
     } finally { setAttaching(false); }
   };
+  const addDocuments = async (files: FileList | File[]) => {
+    const accepted = Array.from(files).filter((file) => /^(text\\/|application\\/(pdf|json|xml|rtf|msword|vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document))/.test(file.type) || /\\.(txt|md|csv|json|xml|html|css|js|ts|py|pdf|docx)$/i.test(file.name));
+    if (!accepted.length) { setStatus("Choose a supported document or text file."); return; }
+    setAttaching(true); setStatus("");
+    try {
+      const extracted: string[] = [];
+      for (const file of accepted.slice(0, 5)) {
+        if (file.size > 8 * 1024 * 1024) { setStatus(`${file.name} exceeds the 8 MB limit and was skipped.`); continue; }
+        if (file.type === "application/pdf" || /\\.pdf$/i.test(file.name) || /\\.docx$/i.test(file.name)) {
+          setStatus(`${file.name}: PDF and DOCX uploads are selected, but text extraction for these formats needs a document parser. Upload a TXT/MD version for now.`);
+          continue;
+        }
+        const text = await file.text();
+        extracted.push(`\\n\\n[Document: ${file.name}]\\n${text.slice(0, 100000)}\\n[End document]`);
+      }
+      if (extracted.length) setDocuments((prev) => [...prev, ...extracted].slice(0, 5));
+    } catch { setStatus("Could not read one of the selected documents."); }
+    finally { setAttaching(false); }
+  };
   const send = async (raw = input, attached = images) => {
-    const prompt = raw.trim(); if ((!prompt && !attached.length) || loading || attaching) return;
+    const prompt = (raw.trim() + documents.join("\n")).trim(); if ((!prompt && !attached.length) || loading || attaching) return;
     setLoading(true); setStatus(""); busyRef.current = true; stickRef.current = true;
     let chat: Chat | null = current;
     try {
@@ -145,7 +168,7 @@ export default function LearnGPT() {
       if (!chat) chat = await createChat(title);
       const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}) };
       const messages = [...chat.messages, userMessage]; const optimistic = { ...chat, title: chat.messages.length ? chat.title : title, messages, updatedAt: Date.now() };
-      setCurrent(optimistic); setInput(""); setImages([]); setSidebarOpen(false); if (routeChatId !== chat.id) goTo(`/chat/${chat.id}`);
+      setCurrent(optimistic); setInput(""); setImages([]); setDocuments([]); setSidebarOpen(false); if (routeChatId !== chat.id) goTo(`/chat/${chat.id}`);
       const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, systemPrompt: settings.systemPrompt, messages: buildPayload(messages) }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { throw new Error(response.status === 413 ? "The images are too large to send. Try fewer or smaller images." : data.error || `Request failed (${response.status})`); }
@@ -188,14 +211,14 @@ export default function LearnGPT() {
       </nav>
       <div className="sidebar-bottom">
         <div className="profile-row"><span className="profile-avatar">{user.avatar?<img src={user.avatar} alt=""/>:<User size={16}/>}</span><span className="profile-copy"><strong>{user.name}</strong>{user.email&&<small>{user.email}</small>}</span></div>
-        <div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>AI settings</button><button onClick={signOut}><LogOut size={17}/>Sign out</button></div>
+        <div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>Settings</button><button onClick={signOut}><LogOut size={17}/>Sign out</button></div>
       </div>
     </aside>
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"/>}
     <section className="chat-main">
       <header className="chat-header">
         <div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Menu size={20}/></button><h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
-        <div className="header-actions"><select className="header-model" aria-label="Model" value={model} onChange={(event)=>setSettings((value)=>({...value,model:event.target.value as LearnModel}))}>{LEARN_MODELS.map((item)=><option key={item} value={item}>{MODEL_LABELS[item]}</option>)}</select><button className="icon-button settings-trigger" onClick={()=>setSettingsOpen(true)} aria-label="Settings"><SettingsIcon size={18}/></button></div>
+        <div className="header-actions"><span className="header-model-label">{MODEL_LABELS[model]}</span></div>
       </header>
       <div className="chat-scroll-wrap">
         <div className="chat-content" ref={scrollRef} onScroll={onScroll}>
@@ -216,10 +239,17 @@ export default function LearnGPT() {
       </div>
       <div className="composer-zone" onDragOver={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(true)}}} onDragLeave={(event)=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDragging(false)}} onDrop={(event)=>{event.preventDefault();setDragging(false);if(event.dataTransfer.files.length)addFiles(event.dataTransfer.files)}}>
         <div className={`composer ${images.length||attaching?"has-images":""} ${dragging?"dragging":""}`}>
-          {(images.length>0||attaching)&&<div className="attachment-tray">{images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={14}/></button></div>)}{attaching&&<div className="attachment attachment-loading" aria-label="Processing image"><i/></div>}</div>}
+          {(images.length>0||documents.length>0||attaching)&&<div className="attachment-tray">{images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={14}/></button></div>)}{documents.map((doc,index)=><div className="document-attachment" key={index}><FileText size={17}/><span>Document {index+1}</span><button onClick={()=>setDocuments((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove document ${index+1}`}><X size={13}/></button></div>)}{attaching&&<div className="attachment attachment-loading" aria-label="Processing upload"><i/></div>}</div>}
           <div className="composer-row">
-            <button className="attach-button" aria-label="Attach images" title={`Attach images (max ${MAX_IMAGES})`} disabled={attaching||images.length>=MAX_IMAGES} onClick={()=>attachRef.current?.click()}><Paperclip size={20}/></button>
+            <div className="upload-picker">
+              <button className="attach-button" aria-label="Upload files or images" title="Upload files or images" disabled={attaching} onClick={()=>setUploadMenuOpen((open)=>!open)}><Paperclip size={20}/></button>
+              {uploadMenuOpen&&<div className="upload-menu" role="menu">
+                <button role="menuitem" onClick={()=>{setUploadMenuOpen(false);documentRef.current?.click()}}><FileText size={17}/><span><strong>Documents & files</strong><small>TXT, MD, CSV, code files</small></span></button>
+                <button role="menuitem" onClick={()=>{setUploadMenuOpen(false);attachRef.current?.click()}}><ImageIcon size={17}/><span><strong>Images</strong><small>PNG, JPG, WEBP and more</small></span></button>
+              </div>}
+            </div>
             <input ref={attachRef} type="file" accept="image/*" multiple hidden onChange={(event)=>{if(event.target.files?.length)addFiles(event.target.files);event.target.value=""}}/>
+            <input ref={documentRef} type="file" accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.pdf,.docx" multiple hidden onChange={(event)=>{if(event.target.files?.length)addDocuments(event.target.files);event.target.value=""}}/>
             <textarea ref={taRef} rows={1} aria-label="Message" value={input} onChange={(event)=>setInput(event.target.value)} onPaste={(event)=>{const files=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(files.length){event.preventDefault();addFiles(files)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={images.length?"Add a message about your image(s)…":"Ask anything…"}/>
             <button className="send-button" disabled={(!input.trim()&&!images.length)||loading||attaching} onClick={()=>send()} aria-label="Send message"><Send size={18}/></button>
           </div>
