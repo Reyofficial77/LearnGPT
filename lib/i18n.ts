@@ -2,7 +2,7 @@
 // Safe to import from client components.
 export type Lang = "id" | "en";
 export const LANG_STORAGE_KEY = "learngpt_lang";
-export const DEFAULT_LANG: Lang = "id";
+export const DEFAULT_LANG: Lang = "en";
 
 const dict = {
   id: {

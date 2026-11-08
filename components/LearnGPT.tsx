@@ -1,6 +1,6 @@
 "use client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, FileText, Folder, Image as ImageIcon, List, Menu, Paperclip, Plus, Send, X, Zap } from "react-feather";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronUp, FileText, Folder, Image as ImageIcon, List, Menu, Mic, Paperclip, Plus, Send, X, Zap } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import SettingsModal from "./SettingsModal";
@@ -45,7 +45,6 @@ function goTo(path: string, mode: "push" | "replace" = "push") {
   window.history[mode === "push" ? "pushState" : "replaceState"](null, "", path);
 }
 
-const MODEL_SHORT_LABELS: Record<LearnModel, string> = { "learn-1.0-smart": "Smart", "learn-1.0-study": "Study", "learn-2.0-thinking": "Thinking" };
 const MAX_IMAGES = 4;
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 1_000_000;
@@ -105,12 +104,14 @@ export default function LearnGPT() {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [listening, setListening] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<ProjectSummary | null>(null);
   const pathname = usePathname();
   const route = parseRoute(pathname || "/");
   const routeSlug = route.kind === "project" || route.kind === "project-chat" ? route.slug : null;
   const chatsRef = useRef<Chat[]>([]);
   const projectsRef = useRef<ProjectSummary[]>([]);
+  const recognitionRef = useRef<any>(null);
   const deletedSlugsRef = useRef<Set<string>>(new Set());
   const busyRef = useRef(false);
   const [images, setImages] = useState<string[]>([]);
@@ -153,6 +154,8 @@ export default function LearnGPT() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, loaded]);
   useEffect(() => { try { const saved = localStorage.getItem(LANG_STORAGE_KEY); if (saved === "id" || saved === "en") setLang(saved); } catch { /* storage unavailable */ } }, []);
+  // Stop the microphone if the component goes away.
+  useEffect(() => () => { try { recognitionRef.current?.abort(); } catch { /* already stopped */ } }, []);
   // Ctrl+Shift+, opens Settings (shown in the account menu).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === "Comma") { event.preventDefault(); setSidebarOpen(false); setSettingsOpen(true); } };
@@ -248,7 +251,7 @@ export default function LearnGPT() {
     const prompt = raw.trim(); if ((!prompt && !attached.length && !attachedFiles.length) || loading || attaching) return;
     const uploadChars = attached.reduce((total, image) => total + image.length, 0) + attachedFiles.reduce((total, file) => total + file.dataUrl.length, 0);
     if (uploadChars > MAX_COMBINED_UPLOAD_CHARS) { setStatus("Attachments are too large to send together. Remove a file or choose smaller items."); return; }
-    setLoading(true); setStatus(""); busyRef.current = true; stickRef.current = true;
+    cancelDictation(); setLoading(true); setStatus(""); busyRef.current = true; stickRef.current = true;
     let chat: Chat | null = current;
     try {
       // The AI writes the real title from the first prompt (returned by /api/chat); until then the sidebar shows a placeholder.
@@ -289,6 +292,34 @@ export default function LearnGPT() {
     } catch {
       setSettings(previous); setStatus("Could not save the selected model. Try again.");
     }
+  };
+  // Dictation (Web Speech API). The recognized words are appended to what is already typed.
+  const cancelDictation = () => { const recognition = recognitionRef.current; recognitionRef.current = null; setListening(false); try { recognition?.abort(); } catch { /* already stopped */ } };
+  const toggleDictation = () => {
+    if (listening) { try { recognitionRef.current?.stop(); } catch { cancelDictation(); } return; }
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Recognition) { setStatus("Dictation isn't supported in this browser. Try Chrome, Edge, or Safari."); return; }
+    const recognition = new Recognition();
+    recognition.lang = lang === "id" ? "id-ID" : "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    const base = input.trim() ? `${input.replace(/\s+$/, "")} ` : "";
+    let finalText = "";
+    recognition.onresult = (event: any) => {
+      if (recognitionRef.current !== recognition) return;
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) { const result = event.results[i]; if (result.isFinal) finalText += result[0].transcript; else interim += result[0].transcript; }
+      setInput(base + (finalText + interim).replace(/\s+/g, " ").replace(/^\s+/, ""));
+    };
+    recognition.onerror = (event: any) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") setStatus("Microphone access is blocked. Allow it in your browser's site settings, then try again.");
+      else if (event.error === "network") setStatus("Dictation needs an internet connection.");
+      else if (event.error === "audio-capture") setStatus("No microphone was found.");
+      else if (event.error !== "no-speech" && event.error !== "aborted") setStatus("Dictation stopped unexpectedly. Please try again.");
+    };
+    recognition.onend = () => { if (recognitionRef.current === recognition) { recognitionRef.current = null; setListening(false); } };
+    recognitionRef.current = recognition; setStatus("");
+    try { recognition.start(); setListening(true); } catch { recognitionRef.current = null; setStatus("Could not start the microphone. Please try again."); }
   };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
   const deleteChat = async (id:string) => { const target = chats.find((item)=>item.id===id); const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){const home=target?.projectId?projectsRef.current.find((project)=>project.id===target.projectId):undefined;setCurrent(null);goTo(home?`/${home.slug}`:"/");}} };
@@ -369,7 +400,9 @@ export default function LearnGPT() {
             {files.map((file)=><div className="attachment-file" key={file.id}><FileText size={19}/><span title={file.name}>{file.name}</span><button className="attachment-remove" onClick={()=>setFiles((items)=>items.filter((item)=>item.id!==file.id))} aria-label={`Remove ${file.name}`}><X size={14}/></button></div>)}
             {attaching&&<div className="attachment attachment-loading" aria-label="Processing attachment"><i/></div>}
           </div>}
-          <div className="composer-row">
+            <textarea ref={taRef} rows={1} aria-label="Message" value={input} onChange={(event)=>{if(listening)cancelDictation();setInput(event.target.value)}} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={listening?"Listening…":images.length||files.length?"Add a message about your attachments…":"Ask anything…"}/>
+          <div className="composer-bar">
+            <div className="composer-tools">
             <div className="attach-menu-wrap" ref={attachMenuRef}>
               <button className="attach-button" aria-label="Attach files" title="Attach files or images" disabled={attaching||files.length>=MAX_FILES&&images.length>=MAX_IMAGES} aria-expanded={attachMenuOpen} onClick={()=>setAttachMenuOpen((open)=>!open)}><Plus size={21}/></button>
               {attachMenuOpen&&<div className="composer-menu attach-menu" role="menu">
@@ -379,14 +412,17 @@ export default function LearnGPT() {
             </div>
             <input ref={fileInputRef} type="file" accept={ACCEPTED_FILE_TYPES} multiple hidden onChange={(event)=>{if(event.target.files?.length)addDocuments(event.target.files);event.target.value=""}}/>
             <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(event)=>{if(event.target.files?.length)addImages(event.target.files);event.target.value=""}}/>
-            <textarea ref={taRef} rows={1} aria-label="Message" value={input} onChange={(event)=>setInput(event.target.value)} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={images.length||files.length?"Add a message about your attachments…":"Ask anything…"}/>
             <div className="model-picker-wrap" ref={modelMenuRef}>
-              <button className="model-picker-trigger" aria-label={`Choose model, current model ${MODEL_LABELS[model]}`} aria-haspopup="listbox" aria-expanded={modelMenuOpen} onClick={()=>setModelMenuOpen((open)=>!open)}><span>{MODEL_SHORT_LABELS[model]}</span><ChevronDown size={15}/></button>
+              <button className="model-picker-trigger" aria-label={`Choose model, current model ${MODEL_LABELS[model]}`} aria-haspopup="listbox" aria-expanded={modelMenuOpen} onClick={()=>setModelMenuOpen((open)=>!open)}><span>{MODEL_LABELS[model]}</span><ChevronUp size={15}/></button>
               {modelMenuOpen&&<div className="composer-menu model-menu" role="listbox" aria-label="Choose a LearnGPT model">
                 {LEARN_MODELS.map((item)=><button className="model-option" key={item} role="option" aria-selected={model===item} onClick={()=>changeModel(item)}><span><strong>{MODEL_LABELS[item]}</strong><small>{item==="learn-1.0-smart"?"For everyday questions":item==="learn-1.0-study"?"For guided explanations and practice":"For complex questions and reasoning"}</small></span>{model===item&&<Check size={16}/>}</button>)}
               </div>}
             </div>
+            </div>
+            <div className="composer-actions">
+              <button className={`mic-button ${listening?"listening":""}`} onClick={toggleDictation} disabled={loading||attaching} aria-pressed={listening} aria-label={listening?"Stop dictation":"Start dictation"} title={listening?"Stop dictation":"Dictate your message"}><Mic size={19}/></button>
             <button className="send-button" disabled={(!input.trim()&&!images.length&&!files.length)||loading||attaching} onClick={()=>send()} aria-label="Send message"><Send size={18}/></button>
+            </div>
           </div>
           {dragging&&<div className="drop-hint"><Paperclip size={20}/>Drop files or images to attach</div>}
         </div>

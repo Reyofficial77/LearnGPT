@@ -53,7 +53,7 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 
 ## Chat features
 
-- The model switcher is inside the message composer and uses a custom menu. AI settings (`Pengaturan`) open from the account menu at the bottom of the sidebar (or with `Ctrl+Shift+,`).
+- The model switcher is inside the message composer and uses a custom menu. AI settings (`Settings`) open from the account menu at the bottom of the sidebar (or with `Ctrl+Shift+,`).
 - Users can choose `Documents & files` or `Images` from the attachment menu. Supported documents include PDF, DOCX, text, CSV, JSON, and common code formats. PDF text extraction is best-effort; scanned PDFs may need to be uploaded as images.
 - Uploaded document/file names are replaced with generated names in the browser before the request is sent, then assigned a fresh server-side name. Original filenames are not stored or sent to the AI provider.
 - Up to 4 images or 4 documents/files can be staged. Individual documents/files are limited to 1 MB, and the combined attachment request is capped client-side to help stay within serverless request limits.
@@ -64,9 +64,10 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 ## Sidebar, projects and chat titles
 
 - Colors: page background `#191919`; sidebar, popups, dialogs and cards `#30302E` (tokens `--bg` / `--panel` in `app/globals.css`).
-- Sidebar order: brand → `+ New Chat` → **Workspace** (projects, each with its own chat history) → **Chat** (chats outside any project) → account. Clicking the account opens a menu with Pengaturan, Bahasa, Bantuan and Keluar.
+- Sidebar order: brand → `+ New Chat` → **Workspace** (projects, each with its own chat history) → **Chat** (chats outside any project) → account. Clicking the account opens a menu with Settings, Language, Help and Sign out.
 - **Projects** have a name and a goal. The `Project` button opens the create dialog. The project name and goal are added to the AI system prompt for every chat inside that project. Deleting a project deletes its chats.
 - Routes: plain chats use `/chat/{25-char-id}`; project pages use `/{project-slug}`; chats in a project use `/{project-slug}/{25-char-id}`. The slug is made from the project name and is unique per user; names such as `chat`, `api` or `auth` are reserved (see `lib/slug.ts`).
 - **Chat titles** are written by the AI from the user's first prompt (2–6 words, in the user's language) in parallel with the first answer (`lib/chat-title.ts`). If the AI call fails, a shortened version of the prompt is used.
-- `Bahasa` switches the language (Indonesia / English) of the sidebar menu, dialogs and labels; the choice is kept in the browser (`localStorage`).
+- `Language` switches the language (English / Bahasa Indonesia) of the sidebar menu, dialogs and labels; English is the default and the choice is kept in the browser (`localStorage`).
+- The composer has the message box on top and a toolbar below it: attach (+) and the model picker on the left, dictation (microphone) and send on the right. Dictation uses the browser Speech Recognition API (Chrome, Edge, Safari) and listens in the selected language (en-US or id-ID).
 - Projects and `Chat.projectId` are created by migration `202611080002_projects` (runs automatically on build).

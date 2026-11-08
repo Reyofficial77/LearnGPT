@@ -225,7 +225,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .side-section + .side-section { margin-top: 24px; }
 .side-head { min-height: 30px; display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; padding: 0 2px 0 10px; }
 .nav-label { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
-.side-count { min-width: 22px; padding: 0 7px; border-radius: 999px; text-align: center; color: var(--muted); background: rgba(255, 255, 255, 0.08); font-size: 12px; font-weight: 600; line-height: 20px; }
 
 .history-clear {
   display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 8px; border: 0; border-radius: var(--r-sm);
@@ -464,36 +463,43 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 .composer:focus-within { border-color: rgba(74, 155, 255, 0.7); box-shadow: 0 0 0 3px var(--blue-tint), 0 6px 20px rgba(0, 0, 0, 0.18); }
 .composer.dragging { border-color: var(--blue-bright); background: #2f3b4a; }
-.composer-row { display: flex; align-items: flex-end; gap: 6px; }
+.composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.composer-tools, .composer-actions { min-width: 0; display: flex; align-items: center; gap: 4px; }
+.composer-tools { flex: 1 1 auto; }
+.composer-actions { flex: 0 0 auto; gap: 6px; }
 .composer textarea {
-  flex: 1; min-width: 0; min-height: 28px; max-height: 220px; margin: 0; padding: 9px 4px;
+  display: block; width: 100%; min-height: 28px; max-height: 220px; margin: 0; padding: 8px 8px 2px;
   border: 0; outline: 0; resize: none; overflow-y: auto; color: var(--text); background: transparent; font-size: 16px; line-height: 1.5;
 }
 .composer textarea::placeholder { color: #8f8d87; }
 
-.attach-button, .send-button { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; }
-.attach-button { border-radius: 14px; color: var(--muted); background: transparent; transition: color 160ms ease, background-color 160ms ease; }
-.attach-button:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, 0.07); }
-.attach-button:disabled { opacity: 0.4; }
-.send-button { border-radius: 14px; color: #fff; background: var(--blue-solid); transition: background-color 160ms ease; }
+.attach-button, .send-button, .mic-button { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; }
+.attach-button, .mic-button { color: var(--muted); background: transparent; transition: color 160ms ease, background-color 160ms ease; }
+.attach-button:hover:not(:disabled), .mic-button:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.attach-button:disabled, .mic-button:disabled { opacity: 0.4; }
+.mic-button.listening { color: #fff; background: var(--blue-solid); animation: mic-pulse 1.5s ease-in-out infinite; }
+.mic-button.listening:hover:not(:disabled) { background: var(--blue-solid-hover); }
+.send-button { color: #fff; background: var(--blue-solid); transition: background-color 160ms ease; }
 .send-button:hover:not(:disabled) { background: var(--blue-solid-hover); }
 .send-button:disabled { color: var(--muted); background: var(--surface-2); opacity: 0.7; }
 .attach-menu-wrap, .model-picker-wrap { position: relative; flex: 0 0 auto; }
+.model-picker-wrap { min-width: 0; }
 .model-picker-trigger {
-  height: 42px; max-width: 162px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px;
-  border: 1px solid var(--line); border-radius: 14px; color: var(--text-2); background: var(--surface-2);
-  font-size: 13px; font-weight: 600; white-space: nowrap; transition: border-color 160ms ease, background-color 160ms ease;
+  height: 38px; max-width: 240px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px;
+  border: 0; border-radius: 12px; color: var(--muted); background: transparent;
+  font-size: 14px; font-weight: 500; white-space: nowrap; transition: color 160ms ease, background-color 160ms ease;
 }
 .model-picker-trigger span { overflow: hidden; text-overflow: ellipsis; }
-.model-picker-trigger:hover, .model-picker-trigger[aria-expanded="true"] { border-color: var(--line-strong); background: var(--surface-3); }
-.model-picker-trigger:focus-visible, .attach-button:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 2px; }
+.model-picker-trigger svg { flex: 0 0 auto; }
+.model-picker-trigger:hover, .model-picker-trigger[aria-expanded="true"] { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.model-picker-trigger:focus-visible, .attach-button:focus-visible, .mic-button:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 2px; }
 .composer-menu {
   position: absolute; z-index: 35; bottom: calc(100% + 10px); overflow: hidden; padding: 6px;
   border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36); animation: rise-in 130ms ease-out both;
 }
 .attach-menu { left: 0; width: 250px; }
-.model-menu { right: 0; width: 264px; }
+.model-menu { left: 0; width: 264px; }
 .composer-menu button { width: 100%; display: flex; align-items: center; gap: 11px; padding: 10px; border: 0; border-radius: 9px; color: var(--text-2); background: transparent; text-align: left; }
 .composer-menu button:hover, .composer-menu button[aria-selected="true"] { color: #fff; background: var(--blue-tint); }
 .composer-menu button > span { min-width: 0; display: grid; gap: 3px; }
@@ -645,6 +651,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 @keyframes rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes message-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(38, 132, 255, 0.45); } 50% { box-shadow: 0 0 0 7px rgba(38, 132, 255, 0); } }
 @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
@@ -683,10 +690,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .composer-zone { padding: 4px 12px calc(10px + var(--safe-bottom)); }
   .composer-zone > p { display: none; }
   .composer { border-radius: 22px; }
-  .composer-row { gap: 4px; }
-  .model-picker-trigger { max-width: 126px; padding: 0 8px; gap: 4px; font-size: 13px; }
-  .attach-button, .send-button { width: 38px; height: 40px; }
-  .composer textarea { padding-left: 2px; padding-right: 2px; }
+  .composer-actions { gap: 4px; }
+  .model-picker-trigger { max-width: 150px; padding: 0 8px; gap: 4px; font-size: 13px; }
+  .composer textarea { padding-left: 6px; padding-right: 6px; }
   .attachment-file { width: min(210px, calc(100vw - 72px)); }
 
   

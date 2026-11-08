@@ -105,7 +105,7 @@ export default function Sidebar(props: Props) {
 
       <section className="side-section" aria-labelledby="side-chat">
         <div className="side-head">
-          <p className="nav-label" id="side-chat">{t.chat}<span className="side-count">{plainChats.length}</span></p>
+          <p className="nav-label" id="side-chat">{t.chat}</p>
           <button className="history-clear" onClick={props.onClearChats} disabled={!plainChats.length}><Trash2 size={14} />{t.clearAll}</button>
         </div>
         {plainChats.length
