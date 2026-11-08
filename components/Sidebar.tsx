@@ -1,6 +1,6 @@
 "use client";
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronDown, ChevronUp, Edit3, Folder, Globe, HelpCircle, Link2Off, LogOut, MoreHorizontal, Pin, Plus, Share2, Settings as SettingsIcon, Trash2, User, X } from "react-feather";
+import { BookOpen, ChevronDown, ChevronUp, Edit3, Folder, Globe, HelpCircle, Lock, LogOut, MoreHorizontal, Bookmark, Plus, Share2, Settings as SettingsIcon, Trash2, User, X } from "react-feather";
 import type { Chat, ProjectSummary } from "../lib/types";
 import { type Dict } from "../lib/i18n";
 
@@ -32,15 +32,15 @@ function ChatRow({ chat, active, titling, t, onOpen, onDelete, onRename, onPin, 
   const action = (callback: () => void) => () => { setMenuOpen(false); callback(); };
   return <div className={`side-row chat-side-row ${active ? "active" : ""}`}>
     <button className="row-main" title={chat.title} aria-current={active ? "page" : undefined} onClick={onOpen}>
-      {chat.pinned && <Pin size={13} className="pinned-marker" aria-label={t.pinChat} />}
+      {chat.pinned && <Bookmark size={13} className="pinned-marker" aria-label={t.pinChat} />}
       <span className={`row-label ${titling ? "is-titling" : ""}`}>{chat.title}</span>
     </button>
     <div className="chat-menu-wrap" ref={menuRef}>
       <button className="row-action more" onClick={() => setMenuOpen((open) => !open)} aria-label={t.chatActions} aria-haspopup="menu" aria-expanded={menuOpen}><MoreHorizontal size={17} /></button>
       {menuOpen && <div className="chat-actions-menu" role="menu">
         <button role="menuitem" onClick={action(onRename)}><Edit3 size={15} /><span>{t.renameChat}</span></button>
-        <button role="menuitem" onClick={action(onPin)}><Pin size={15} /><span>{chat.pinned ? t.unpinChat : t.pinChat}</span></button>
-        <button role="menuitem" onClick={action(onShare)}>{chat.isPublic ? <Link2Off size={15} /> : <Share2 size={15} />}<span>{chat.isPublic ? t.makePrivate : t.shareChat}</span></button>
+        <button role="menuitem" onClick={action(onPin)}><Bookmark size={15} /><span>{chat.pinned ? t.unpinChat : t.pinChat}</span></button>
+        <button role="menuitem" onClick={action(onShare)}>{chat.isPublic ? <Lock size={15} /> : <Share2 size={15} />}<span>{chat.isPublic ? t.makePrivate : t.shareChat}</span></button>
         <div className="menu-sep" role="separator" />
         <button className="danger" role="menuitem" onClick={action(onDelete)}><Trash2 size={15} /><span>{t.delete}</span></button>
       </div>}
