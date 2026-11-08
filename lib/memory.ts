@@ -6,8 +6,15 @@ const GLOBAL_MEMORY_ID = "global";
 const DEFAULT_USER_MEMORY = "# User memory\n\nNo stable user details have been saved yet.\n";
 
 async function readProjectMemory(fileName: "MEMORY.md" | "USER.md"): Promise<string> {
-  try { return await readFile(join(process.cwd(), fileName), "utf8"); }
-  catch { return fileName === "MEMORY.md" ? "You are LearnGPT, a patient learning assistant. Use the user's language and teach clearly." : DEFAULT_USER_MEMORY; }
+  try {
+    // Static paths let Next.js trace only these two files, not the whole project.
+    if (fileName === "MEMORY.md") return await readFile(join(process.cwd(), "MEMORY.md"), "utf8");
+    return await readFile(join(process.cwd(), "USER.md"), "utf8");
+  } catch {
+    return fileName === "MEMORY.md"
+      ? "You are LearnGPT, a patient learning assistant. Use the user's language and teach clearly."
+      : DEFAULT_USER_MEMORY;
+  }
 }
 
 export async function loadMemoryContext(userId: string) {
