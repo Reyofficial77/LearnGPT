@@ -66,7 +66,7 @@ function buildRunnerDoc(code: string, lang: string) {
     ? `const source=${encoded};const out=document.getElementById("output");const write=(value,error=false)=>{const line=document.createElement("div");line.className=error?"error":"";line.textContent=String(value);out.appendChild(line)};(async()=>{try{write("Loading Python runtime...");const pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.29.5/full/"});out.textContent="";pyodide.setStdout({batched:(value)=>write(value)});pyodide.setStderr({batched:(value)=>write(value,true)});await pyodide.runPythonAsync(source)}catch(error){write(error&&error.stack?error.stack:String(error),true)}})();`
     : `const source=${encoded};const out=document.getElementById("output");const write=(value,error=false)=>{const line=document.createElement("div");line.className=error?"error":"";line.textContent=String(value);out.appendChild(line)};const format=(value)=>typeof value==="string"?value:(value===undefined?"undefined":JSON.stringify(value));const original={log:console.log,info:console.info,warn:console.warn,error:console.error};for(const key of Object.keys(original)){console[key]=(...args)=>{write(args.map(format).join(" "),key==="error"||key==="warn");original[key].apply(console,args)}};window.onerror=(message,source,line,column,error)=>{write(error&&error.stack?error.stack:String(message)+" at "+line+":"+column,true)};window.onunhandledrejection=(event)=>write(event.reason&&event.reason.stack?event.reason.stack:String(event.reason),true);(async()=>{try{const execute=new Function("console","document","window","return (async function(){\\n"+source+"\\n})()");const result=await execute(console,document,window);if(result!==undefined)write(format(result))}catch(error){write(error&&error.stack?error.stack:String(error),true)}})();`;
   const pyScript = isPython ? '<script src="https://cdn.jsdelivr.net/pyodide/v0.29.5/full/pyodide.js"></script>' : "";
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:14px;background:#11151c;color:#dbe5f2;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}#output{white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#ff9a9a;padding:3px 0}</style></head><body><div id="output"></div>${pyScript}<script>${script}</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}html,body{background:transparent!important}body{margin:0;padding:12px 14px;color:#f1f2f4;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}#output{white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#ff9a9a;padding:3px 0}</style></head><body><div id="output"></div>${pyScript}<script>${script}</script></body></html>`;
 }
 
 async function copyText(text: string) {
@@ -129,11 +129,13 @@ function CodeBlock({ rawLang, code }: { rawLang: string; code: string }) {
     </div>
     {info.previewKind && tab === "preview"
       ? <PreviewFrame key={reloadKey} doc={previewDoc} className="preview-frame"/>
-      : <div className="code-body"><pre><code className="hljs" dangerouslySetInnerHTML={{ __html: html }}/></pre></div>}
-    {canRun && showOutput && <div className="run-output console-output">
-      <div className="run-output-head"><strong>Output</strong><span className="run-output-actions"><button type="button" className="code-btn" onClick={() => setShowOutput(false)} aria-label="Close output" title="Close output"><X size={14}/></button></span></div>
-      <iframe key={runKey} className="run-frame console" sandbox="allow-scripts" srcDoc={runDoc} title={`${label} output`} referrerPolicy="no-referrer"/>
-    </div>}
+      : <div className="code-body">
+          <pre><code className="hljs" dangerouslySetInnerHTML={{ __html: html }}/></pre>
+          {canRun && showOutput && <div className="run-output console-output">
+            <div className="run-output-head"><strong>Output</strong><span className="run-output-actions"><button type="button" className="code-btn" onClick={() => setShowOutput(false)} aria-label="Close output" title="Close output"><X size={14}/></button></span></div>
+            <iframe key={runKey} className="run-frame console" sandbox="allow-scripts" srcDoc={runDoc} title={`${label} output`} referrerPolicy="no-referrer"/>
+          </div>}
+        </div>}
     {fullPreview && typeof document !== "undefined" && createPortal(<div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Fullscreen preview">
       <div className="preview-overlay-bar"><strong>{label} Preview</strong><button type="button" className="code-btn" onClick={() => setFullPreview(false)} aria-label="Close preview" title="Close preview"><X size={16}/><span>Close</span></button></div>
       <PreviewFrame key={`full-${reloadKey}`} doc={previewDoc} className="preview-frame full"/>

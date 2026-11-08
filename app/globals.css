@@ -579,11 +579,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .preview-overlay { position: fixed; z-index: 9999; inset: 0; width: 100vw; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; background: var(--panel); }
 .preview-overlay-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: calc(10px + var(--safe-top)) 14px 10px; border-bottom: 1px solid var(--line); background: #262624; color: #f4f4f5; }
 .preview-frame.full { flex: 1; width: 100%; height: 100%; min-height: 0; resize: none; }
-.run-output { overflow: hidden; border-top: 1px solid rgba(255,255,255,.1); background: #11151c; }
+.run-output { margin: 0 16px 14px; overflow: hidden; border: 1px solid rgba(255,255,255,.13); border-radius: 12px; background: rgba(0,0,0,.13); }
 .run-output.visual-output { background: #fff; }
-.run-output-head { min-height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 3px 10px 3px 15px; border-bottom: 1px solid rgba(255,255,255,.08); color: #dbe5f2; font-size: 12px; }
-.run-output-head .code-btn { width: 32px; height: 32px; padding: 0; color: #c4cfde; }
-.run-frame { display: block; width: 100%; height: 230px; border: 0; background: #11151c; }
+.run-output-head { min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 2px 8px 2px 12px; border-bottom: 1px solid rgba(255,255,255,.1); color: #f1f2f4; font-size: 12px; }
+.run-output-head .code-btn { width: 28px; height: 28px; padding: 0; color: #e2e5e9; }
+.run-frame { display: block; width: 100%; height: 230px; border: 0; background: transparent; }
+.run-frame.console { height: 180px; background: transparent; }
 .run-frame.visual { height: 360px; background: #fff; }
 
 .hljs-comment, .hljs-quote { color: #8190a4; font-style: italic; }
