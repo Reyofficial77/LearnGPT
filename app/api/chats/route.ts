@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma"; import { getSessionUser } from "../../../lib/server-auth";
 import { generateChatId } from "../../../lib/chat-id.server";
 export const runtime="nodejs";
-export async function GET(){const user=await getSessionUser();if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});const chats=await prisma.chat.findMany({where:{userId:user.id},orderBy:{updatedAt:"desc"},include:{messages:{orderBy:{createdAt:"asc"}}}});return NextResponse.json({chats});}
+export async function GET(){const user=await getSessionUser();if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});const chats=await prisma.chat.findMany({where:{userId:user.id},orderBy:[{pinned:"desc"},{updatedAt:"desc"}],include:{messages:{orderBy:{createdAt:"asc"}}}});return NextResponse.json({chats});}
 export async function POST(req:NextRequest){
   const user=await getSessionUser();if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});
   try{

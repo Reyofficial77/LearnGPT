@@ -68,6 +68,22 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 - **Projects** have a name and a goal. The `Project` button opens the create dialog. The project name and goal are added to the AI system prompt for every chat inside that project. Deleting a project deletes its chats.
 - Routes: plain chats use `/chat/{25-char-id}`; project pages use `/{project-slug}`; chats in a project use `/{project-slug}/{25-char-id}`. The slug is made from the project name and is unique per user; names such as `chat`, `api` or `auth` are reserved (see `lib/slug.ts`).
 - **Chat titles** are written by the AI from the user's first prompt (2–6 words, in the user's language) in parallel with the first answer (`lib/chat-title.ts`). If the AI call fails, a shortened version of the prompt is used.
-- `Language` switches the language (English / Bahasa Indonesia) of the sidebar menu, dialogs and labels; English is the default and the choice is kept in the browser (`localStorage`).
+- `Language` switches English / Bahasa Indonesia across menus, dialogs, settings, composer labels, status messages and tooltips; chat titles and LearnGPT branding stay unchanged. The choice is kept in the browser (`localStorage`), and each new chat gets a varied greeting. Dictation follows the selected language (`en-US` or `id-ID`).
 - The composer has the message box on top and a toolbar below it: attach (+) and the model picker on the left, dictation (microphone) and send on the right. Dictation uses the browser Speech Recognition API (Chrome, Edge, Safari) and listens in the selected language (en-US or id-ID).
 - Projects and `Chat.projectId` are created by migration `202611080002_projects` (runs automatically on build).
+
+## Recent workspace features
+
+- The sidebar can be collapsed on desktop and opened as a drawer on smaller screens.
+- Chat actions support renaming, pinning, deleting, and public sharing. Public links use `/shared/c/{chatId}`; choosing **Make private** revokes the link.
+- Settings include dark, light, and system themes. Theme choice is stored with the signed-in user's settings.
+- JavaScript code fences can run in a sandboxed browser frame. Python fences run in Pyodide in the browser; the first Python run downloads the Pyodide runtime from jsDelivr and therefore requires an internet connection. Code does not execute on the LearnGPT server.
+- HTML and SVG code fences keep their live preview. Full-screen preview is rendered outside the scrolling chat viewport.
+
+### Database migration
+
+The new migration `202611080003_chat_sharing_and_preferences` adds `Chat.pinned`, `Chat.isPublic`, and `UserSettings.theme`. The production build already runs `prisma migrate deploy`, so make sure `DATABASE_URL` is configured in the deployment environment before deploying.
+
+### Code execution notes
+
+JavaScript runs inside an iframe sandbox without access to the LearnGPT session or storage. Python runs locally in the browser using Pyodide 0.29.5; Python packages beyond the standard library may need to be installed in the Python runtime and are not automatically provisioned. Long-running or platform-specific programs (for example, desktop GUI applications, native binaries, or Node.js-only APIs) are not supported by this browser runner.
