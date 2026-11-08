@@ -141,7 +141,7 @@ export default function LearnGPT() {
     } finally { setAttaching(false); }
   };
   const addDocuments = async (files: FileList | File[]) => {
-    const accepted = Array.from(files).filter((file) => /^(text\\/|application\\/(pdf|json|xml|rtf|msword|vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document))/.test(file.type) || /\\.(txt|md|csv|json|xml|html|css|js|ts|py|pdf|docx)$/i.test(file.name));
+    const accepted = Array.from(files).filter((file) => /^(text\/|application\/(pdf|json|xml|rtf|msword|vnd\.openxmlformats-officedocument\\.wordprocessingml\\.document))/.test(file.type) || /\\.(txt|md|csv|json|xml|html|css|js|ts|py|pdf|docx)$/i.test(file.name));
     if (!accepted.length) { setStatus("Choose a supported document or text file."); return; }
     setAttaching(true); setStatus("");
     try {
