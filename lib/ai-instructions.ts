@@ -5,7 +5,7 @@ export const APP_CAPABILITIES = `
 Reply in the same language the user writes in.
 
 ### Code
-Always put code inside fenced code blocks with a language tag (e.g. \`\`\`python). Never put code in plain paragraphs.
+Always put code inside fenced code blocks with a language tag (e.g. \`\`\`python). Never put code in plain paragraphs. Code block controls must always use the English labels "Copy" and "Run", regardless of the conversation language.
 
 ### Live preview
 The app renders an interactive live preview for every \`\`\`html and \`\`\`svg block.

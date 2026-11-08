@@ -58,7 +58,7 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 - Uploaded document/file names are replaced with generated names in the browser before the request is sent, then assigned a fresh server-side name. Original filenames are not stored or sent to the AI provider.
 - Up to 4 images or 4 documents/files can be staged. Individual documents/files are limited to 1 MB, and the combined attachment request is capped client-side to help stay within serverless request limits.
 - Image attachments (up to 4 per message; resized to JPEG in the browser) are stored on the message as JSON — migration `202610030001_message_images` runs automatically on build.
-- Code blocks are syntax-highlighted. `html` / `svg` blocks get a sandboxed live preview (no `allow-same-origin`).
+- Code blocks are syntax-highlighted and use a compact header: language name on the left, Copy and (where supported) Run on the right. JavaScript and Python run in a sandboxed browser iframe; HTML, SVG and CSS show a visual preview. Fullscreen is available for visual previews.
 - When asked for a file, the AI replies with a ```` ```file:name.ext ```` block, rendered as a downloadable card (text-based formats only).
 
 ## Sidebar, projects and chat titles
@@ -69,7 +69,7 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 - Routes: plain chats use `/chat/{25-char-id}`; project pages use `/{project-slug}`; chats in a project use `/{project-slug}/{25-char-id}`. The slug is made from the project name and is unique per user; names such as `chat`, `api` or `auth` are reserved (see `lib/slug.ts`).
 - **Chat titles** are written by the AI from the user's first prompt (2–6 words, in the user's language) in parallel with the first answer (`lib/chat-title.ts`). If the AI call fails, a shortened version of the prompt is used.
 - `Language` switches English / Bahasa Indonesia across menus, dialogs, settings, composer labels, status messages and tooltips; chat titles and LearnGPT branding stay unchanged. The choice is kept in the browser (`localStorage`), and each new chat gets a varied greeting. Dictation follows the selected language (`en-US` or `id-ID`).
-- The composer has the message box on top and a toolbar below it: attach (+), the standalone **Code Runner**, and the model picker on the left, dictation (microphone) and send on the right. Dictation uses the browser Speech Recognition API (Chrome, Edge, Safari) and listens in the selected language (en-US or id-ID).
+- The composer has the message box on top and a toolbar below it: attach (+) and the model picker on the left, dictation (microphone) and send on the right. Dictation uses the browser Speech Recognition API (Chrome, Edge, Safari) and listens in the selected language (en-US or id-ID).
 - Projects and `Chat.projectId` are created by migration `202611080002_projects` (runs automatically on build).
 
 ## Recent workspace features
@@ -77,8 +77,8 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 - The sidebar can be collapsed on desktop and opened as a drawer on smaller screens.
 - Chat actions support renaming, pinning, deleting, and public sharing. Public links use `/shared/c/{chatId}`; choosing **Make private** revokes the link.
 - Settings include dark, light, and system themes. Theme choice is stored with the signed-in user's settings.
-- The **Code Runner** button is always available in the message composer. It opens an editor with JavaScript and Python execution plus HTML and CSS visual previews; console output and runtime errors appear in the result panel. Ctrl/Cmd+Enter runs the current code. JavaScript code fences also have an inline Run button. Python uses Pyodide in the browser; the first run downloads the runtime from jsDelivr and therefore requires an internet connection. Code does not execute on the LearnGPT server.
-- HTML and SVG code fences keep their live preview. Full-screen preview is rendered outside the scrolling chat viewport.
+- Code blocks follow a compact inline layout inspired by the supplied reference: language label, Copy icon, and an English **Run** button. JavaScript and Python execute in a sandboxed browser iframe; HTML and SVG render in a preview; CSS is applied to a sample preview page. Copy and Run labels remain in English regardless of the selected LearnGPT UI language. Python uses Pyodide in the browser; the first run downloads the runtime from its CDN and therefore requires an internet connection. Code does not execute on the LearnGPT server.
+- HTML, SVG and CSS previews open when the inline Run button is pressed. Full-screen preview is rendered outside the scrolling chat viewport.
 
 ### Database migration
 
@@ -86,4 +86,4 @@ The new migration `202611080003_chat_sharing_and_preferences` adds `Chat.pinned`
 
 ### Code execution notes
 
-JavaScript runs inside an iframe sandbox without access to the LearnGPT session or storage. Python runs locally in the browser using Pyodide 0.29.5; Python packages beyond the standard library may need to be installed in the Python runtime and are not automatically provisioned. Long-running or platform-specific programs (for example, desktop GUI applications, native binaries, or Node.js-only APIs) are not supported by this browser runner.
+JavaScript runs inside an iframe sandbox without access to the LearnGPT session or storage. Python runs locally in the browser using Pyodide 0.29.5; Python packages beyond the standard library may need to be installed in the Python runtime and are not automatically provisioned. HTML, SVG and CSS blocks are previewed in an isolated iframe. Long-running or platform-specific programs (for example, desktop GUI applications, native binaries, or Node.js-only APIs) are not supported by this browser execution environment.
