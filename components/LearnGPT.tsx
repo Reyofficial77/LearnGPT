@@ -1,14 +1,17 @@
 "use client";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, FileText, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Trash2, User, X, Zap } from "react-feather";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, FileText, Folder, Image as ImageIcon, List, Menu, Paperclip, Plus, Send, X, Zap } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import SettingsModal from "./SettingsModal";
-import { DEFAULT_SETTINGS, type ChatAttachment, type ChatMessage, type Settings as AppSettings } from "../lib/types";
+import Sidebar from "./Sidebar";
+import { DeleteProjectModal, HelpModal, LanguageModal, ProjectModal } from "./SidebarDialogs";
+import { DEFAULT_SETTINGS, type Chat, type ChatAttachment, type ChatMessage, type ProjectSummary, type Settings as AppSettings } from "../lib/types";
+import { DEFAULT_LANG, LANG_STORAGE_KEY, getDict, type Lang } from "../lib/i18n";
+import { isReservedSlug } from "../lib/slug";
 import { LEARN_MODELS, MODEL_LABELS } from "../lib/models";
 import type { LearnModel } from "../lib/types";
 
-type Chat = { id: string; title: string; messages: ChatMessage[]; updatedAt: number };
 type PendingFile = ChatAttachment & { dataUrl: string };
 type PromptCard = { icon: ReactNode; title: string; copy: string };
 
@@ -18,9 +21,22 @@ const promptCards: PromptCard[] = [
   { icon: <Zap size={20} />, title: "Get work done", copy: "Draft a clear project update for my team" }
 ];
 
-const CHAT_PATH = /^\/chat\/([A-Za-z0-9-]+)\/?$/;
+const NEW_CHAT_TITLE = "New Chat";
+// URL shapes: "/" (new chat) · "/chat/{id}" (chat) · "/{project}" (project page) · "/{project}/{id}" (chat inside a project)
+type Route = { kind: "home" } | { kind: "chat"; chatId: string } | { kind: "project"; slug: string } | { kind: "project-chat"; slug: string; chatId: string };
+function parseRoute(pathname: string): Route {
+  const parts = (pathname || "/").split("/").filter(Boolean);
+  if (parts.length === 2 && parts[0] === "chat") return { kind: "chat", chatId: parts[1] };
+  if (parts.length === 1 && !isReservedSlug(parts[0])) return { kind: "project", slug: parts[0] };
+  if (parts.length === 2 && !isReservedSlug(parts[0])) return { kind: "project-chat", slug: parts[0], chatId: parts[1] };
+  return { kind: "home" };
+}
+function chatPath(chat: { id: string; projectId?: string | null }, projects: ProjectSummary[]) {
+  const project = chat.projectId ? projects.find((item) => item.id === chat.projectId) : undefined;
+  return project ? `/${project.slug}/${chat.id}` : `/chat/${chat.id}`;
+}
 // API rows may come without `messages` (e.g. a freshly created chat) -> always normalize.
-function normalizeChat(raw: any): Chat { return { id: raw.id, title: raw.title || "New conversation", messages: Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({ role: m.role, content: m.content, ...(Array.isArray(m.images) && m.images.length ? { images: m.images as string[] } : {}), ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments as ChatAttachment[] } : {}) })) : [], updatedAt: raw.updatedAt ? new Date(raw.updatedAt).getTime() : Date.now() }; }
+function normalizeChat(raw: any): Chat { return { id: raw.id, projectId: typeof raw.projectId === "string" ? raw.projectId : null, title: raw.title || NEW_CHAT_TITLE, messages: Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({ role: m.role, content: m.content, ...(Array.isArray(m.images) && m.images.length ? { images: m.images as string[] } : {}), ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments as ChatAttachment[] } : {}) })) : [], updatedAt: raw.updatedAt ? new Date(raw.updatedAt).getTime() : Date.now() }; }
 
 // Client-side URL change with NO network request and NO reload (like ChatGPT/Claude).
 // Next.js syncs native history.pushState/replaceState with usePathname().
@@ -73,10 +89,6 @@ function buildPayload(msgs: ChatMessage[]) {
 
 function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved }; }
 
-function Brand({ compact = false, onNavigate }: { compact?: boolean; onNavigate?: () => void }) {
-  return <a className="brand" href="/" aria-label="LearnGPT" onClick={onNavigate ? (event) => { event.preventDefault(); onNavigate(); } : undefined}><span className="brand-mark"><BookOpen size={compact ? 18 : 21} /></span><span className="brand-name">LearnGPT</span></a>;
-}
-
 export default function LearnGPT() {
   const [user, setUser] = useState<{ id:string; provider:string; name:string; email?:string; avatar?:string } | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -88,9 +100,18 @@ export default function LearnGPT() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [lang, setLang] = useState<Lang>(DEFAULT_LANG);
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectSummary | null>(null);
   const pathname = usePathname();
-  const routeChatId = CHAT_PATH.exec(pathname || "")?.[1] ?? null;
+  const route = parseRoute(pathname || "/");
+  const routeSlug = route.kind === "project" || route.kind === "project-chat" ? route.slug : null;
   const chatsRef = useRef<Chat[]>([]);
+  const projectsRef = useRef<ProjectSummary[]>([]);
+  const deletedSlugsRef = useRef<Set<string>>(new Set());
   const busyRef = useRef(false);
   const [images, setImages] = useState<string[]>([]);
   const [files, setFiles] = useState<PendingFile[]>([]);
@@ -108,18 +129,36 @@ export default function LearnGPT() {
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved)); setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
+  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes, projectsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings"), fetch("/api/projects")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } if (projectsRes.ok) { const data = await projectsRes.json(); const projectList: ProjectSummary[] = data.projects || []; projectsRef.current = projectList; setProjects(projectList); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved)); setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
-  // Keep the open conversation in sync with the URL (/chat/[id]) — direct visits, refresh, back/forward.
+  // Keep the UI in sync with the URL — direct visits, refresh, back/forward.
+  // Reads projects/chats from refs so a project created or deleted in the same tick is already visible.
   useEffect(() => {
     if (!loaded || busyRef.current) return;
-    if (!routeChatId) { if (current) setCurrent(null); return; }
-    if (current?.id === routeChatId) return;
-    const found = chatsRef.current.find((chat) => chat.id === routeChatId);
-    if (found) { setCurrent(found); setStatus(""); }
-    else { setCurrent(null); setStatus("Conversation not found."); goTo("/","replace"); }
+    if (route.kind === "home") { if (current) setCurrent(null); return; }
+    const slug = route.kind === "project" || route.kind === "project-chat" ? route.slug : null;
+    const slugWasDeleted = !!slug && deletedSlugsRef.current.has(slug);
+    if (slug && !projectsRef.current.some((project) => project.slug === slug)) {
+      setCurrent(null);
+      if (!slugWasDeleted) setStatus(getDict(lang).projectNotFound);
+      goTo("/", "replace");
+      return;
+    }
+    if (route.kind === "project") { if (current) setCurrent(null); setStatus(""); return; }
+    const found = chatsRef.current.find((chat) => chat.id === route.chatId);
+    if (!found) { setCurrent(null); if (!slugWasDeleted) setStatus("Conversation not found."); goTo("/", "replace"); return; }
+    const canonical = chatPath(found, projectsRef.current); // wrong prefix for this chat -> fix the address bar
+    if (window.location.pathname !== canonical) goTo(canonical, "replace");
+    if (current?.id !== found.id) { setCurrent(found); setStatus(""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeChatId, loaded]);
+  }, [pathname, loaded]);
+  useEffect(() => { try { const saved = localStorage.getItem(LANG_STORAGE_KEY); if (saved === "id" || saved === "en") setLang(saved); } catch { /* storage unavailable */ } }, []);
+  // Ctrl+Shift+, opens Settings (shown in the account menu).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === "Comma") { event.preventDefault(); setSidebarOpen(false); setSettingsOpen(true); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const msgCount = current?.messages.length ?? 0;
   const lastRole = current?.messages[msgCount - 1]?.role;
   const scrollToBottom = (smooth = false) => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" }); };
@@ -149,12 +188,11 @@ export default function LearnGPT() {
     window.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("pointerdown", onPointerDown); window.removeEventListener("keydown", onKeyDown); };
   }, [attachMenuOpen, modelMenuOpen]);
-  const history = useMemo(() => chats.filter((chat) => chat.messages.length), [chats]);
   const displayName = user?.name?.split(" ")[0] || "there";
   const model = settings.model;
 
-  const newChat = () => { setCurrent(null); setInput(""); setImages([]); setFiles([]); setStatus(""); setSidebarOpen(false); if (routeChatId) goTo("/"); };
-  const createChat = async (title: string) => { const response = await fetch("/api/chats", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ title }) }); if (!response.ok) throw new Error("Could not create conversation."); const data=await response.json(); const chat=normalizeChat(data.chat); setChats((items)=>[chat,...items]); return chat; };
+  const newChat = () => { setCurrent(null); setInput(""); setImages([]); setFiles([]); setStatus(""); setSidebarOpen(false); if (route.kind !== "home") goTo("/"); };
+  const createChat = async (title: string, projectId: string | null = null) => { const response = await fetch("/api/chats", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ title, ...(projectId ? { projectId } : {}) }) }); if (!response.ok) throw new Error("Could not create conversation."); const data=await response.json(); const chat=normalizeChat(data.chat); setChats((items)=>[chat,...items]); return chat; };
   const addImages = async (selected: FileList | File[]) => {
     const list = Array.from(selected).filter((file) => file.type.startsWith("image/"));
     if (!list.length) return;
@@ -213,18 +251,19 @@ export default function LearnGPT() {
     setLoading(true); setStatus(""); busyRef.current = true; stickRef.current = true;
     let chat: Chat | null = current;
     try {
-      const title = (prompt || (attachedFiles.length ? "Uploaded file" : attached.length ? "Image" : "New conversation")).slice(0, 80);
-      if (!chat) chat = await createChat(title);
+      // The AI writes the real title from the first prompt (returned by /api/chat); until then the sidebar shows a placeholder.
+      const draftTitle = (prompt || (attachedFiles.length ? "Uploaded file" : attached.length ? "Image" : NEW_CHAT_TITLE)).slice(0, 40);
+      if (!chat) chat = await createChat(NEW_CHAT_TITLE, route.kind === "project" ? (projectsRef.current.find((project) => project.slug === route.slug)?.id ?? null) : null);
       const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}), ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
-      const messages = [...chat.messages, userMessage]; const requestMessages = buildPayload(messages); const requestUploadChars = requestMessages.reduce((total, message) => total + (message.images || []).reduce((sum, image) => sum + image.length, 0) + (message.attachments || []).reduce((sum, file) => sum + ("dataUrl" in file && typeof file.dataUrl === "string" ? file.dataUrl.length : 0), 0), 0); if (requestUploadChars > MAX_COMBINED_UPLOAD_CHARS) throw new Error("Attachments are too large to send together. Remove a file or choose smaller items."); const optimistic = { ...chat, title: chat.messages.length ? chat.title : title, messages, updatedAt: Date.now() };
-      setCurrent(optimistic); setInput(""); setImages([]); setFiles([]); setSidebarOpen(false); if (routeChatId !== chat.id) goTo(`/chat/${chat.id}`);
+      const messages = [...chat.messages, userMessage]; const requestMessages = buildPayload(messages); const requestUploadChars = requestMessages.reduce((total, message) => total + (message.images || []).reduce((sum, image) => sum + image.length, 0) + (message.attachments || []).reduce((sum, file) => sum + ("dataUrl" in file && typeof file.dataUrl === "string" ? file.dataUrl.length : 0), 0), 0); if (requestUploadChars > MAX_COMBINED_UPLOAD_CHARS) throw new Error("Attachments are too large to send together. Remove a file or choose smaller items."); const optimistic = { ...chat, title: chat.messages.length ? chat.title : NEW_CHAT_TITLE, messages, updatedAt: Date.now() };
+      setCurrent(optimistic); setChats((items) => [optimistic, ...items.filter((item) => item.id !== optimistic.id)]); setInput(""); setImages([]); setFiles([]); setSidebarOpen(false); goTo(chatPath(chat, projectsRef.current));
       const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, systemPrompt: settings.systemPrompt, messages: requestMessages }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { throw new Error(response.status === 413 ? "Attachments are too large to send. Try fewer or smaller files." : data.error || `Request failed (${response.status})`); }
-      const savedUserMessage = { ...userMessage, ...(attachedFiles.length ? { attachments: Array.isArray(data.attachments) ? data.attachments as ChatAttachment[] : [] } : {}) }; const finalChat = { ...optimistic, messages: [...chat.messages, savedUserMessage, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)]);
+      const savedUserMessage = { ...userMessage, ...(attachedFiles.length ? { attachments: Array.isArray(data.attachments) ? data.attachments as ChatAttachment[] : [] } : {}) }; const finalChat = { ...optimistic, title: chat.messages.length ? chat.title : (typeof data.title === "string" && data.title.trim() ? data.title.trim().slice(0, 80) : draftTitle), messages: [...chat.messages, savedUserMessage, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)]);
     } catch (error) {
       // Nothing was saved on failure: put the user's message back in the composer instead of making them retype it.
-      if (chat) setCurrent(chat);
+      if (chat) { const restored = chat; setCurrent(restored); setChats((items) => items.map((item) => item.id === restored.id ? restored : item)); }
       setInput(prompt); setImages(attached); setFiles(attachedFiles);
       setStatus(error instanceof Error ? error.message : "Something went wrong.");
     } finally { busyRef.current = false; setLoading(false); }
@@ -252,38 +291,63 @@ export default function LearnGPT() {
     }
   };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
-  const deleteChat = async (id:string) => { const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){setCurrent(null);goTo("/");}} };
-  const clearHistory = async () => { await Promise.all(chats.map((chat)=>fetch(`/api/chats/${chat.id}`,{method:"DELETE"}))); setChats([]);setCurrent(null);setStatus("");if(routeChatId)goTo("/"); };
+  const deleteChat = async (id:string) => { const target = chats.find((item)=>item.id===id); const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){const home=target?.projectId?projectsRef.current.find((project)=>project.id===target.projectId):undefined;setCurrent(null);goTo(home?`/${home.slug}`:"/");}} };
+  // "Clear all" belongs to the Chat section, so it only removes chats that are not inside a project.
+  const clearHistory = async () => { const plain = chats.filter((chat)=>!chat.projectId); await Promise.all(plain.map((chat)=>fetch(`/api/chats/${chat.id}`,{method:"DELETE"}))); setChats((items)=>items.filter((chat)=>chat.projectId)); if(current&&!current.projectId){setCurrent(null);setStatus("");goTo("/");} };
+  const openProject = (project: ProjectSummary) => { setCurrent(null); setInput(""); setImages([]); setFiles([]); setStatus(""); setSidebarOpen(false); goTo(`/${project.slug}`); };
+  const openChat = (chat: Chat) => { setCurrent(chat); setSidebarOpen(false); goTo(chatPath(chat, projectsRef.current)); };
+  const createProject = async (name: string, goal: string): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, goal }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.project) return data.error || "Could not create the project.";
+      const project = data.project as ProjectSummary;
+      projectsRef.current = [project, ...projectsRef.current];
+      setProjects(projectsRef.current);
+      setProjectModalOpen(false); openProject(project);
+      return null;
+    } catch { return "Could not reach the server. Please try again."; }
+  };
+  const deleteProject = async (project: ProjectSummary) => {
+    const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE" }).catch(() => null);
+    if (!response?.ok) { setProjectToDelete(null); setStatus("Could not delete the project. Please try again."); return; }
+    deletedSlugsRef.current.add(project.slug);
+    projectsRef.current = projectsRef.current.filter((item) => item.id !== project.id);
+    setProjects(projectsRef.current);
+    setChats((items) => items.filter((chat) => chat.projectId !== project.id));
+    setProjectToDelete(null);
+    if (current?.projectId === project.id || routeSlug === project.slug) { setCurrent(null); goTo("/"); }
+  };
+  const changeLang = (next: Lang) => { setLang(next); setLanguageOpen(false); try { localStorage.setItem(LANG_STORAGE_KEY, next); } catch { /* storage unavailable */ } };
 
   const statusGood = /\bsaved\b/i.test(status);
   const hasMessages = !!current?.messages.length;
-  const chatTitle = hasMessages ? current!.title : "New conversation";
+  const labels = getDict(lang);
+  const routeProject = routeSlug ? projects.find((project) => project.slug === routeSlug) ?? null : null;
+  const currentProject = current?.projectId ? projects.find((project) => project.id === current.projectId) ?? null : null;
+  const activeProjectId = currentProject?.id ?? (route.kind === "project" ? routeProject?.id ?? null : null);
+  const showProjectHome = !hasMessages && route.kind === "project" && !!routeProject;
+  const titlingChatId = loading && current && current.messages.length === 1 ? current.id : null;
+  const chatTitle = hasMessages ? current!.title : showProjectHome ? routeProject!.name : NEW_CHAT_TITLE;
 
   if (!user) return <main className="chat-shell"><div className="loading-screen" role="status"><span className="brand-mark large"><BookOpen size={26}/></span><strong>Loading your workspace…</strong></div></main>;
   return <main className="chat-shell">
-    <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} aria-label="Conversations">
-      <div className="sidebar-top"><Brand compact onNavigate={newChat}/><button className="icon-button close-sidebar" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"><X size={20}/></button></div>
-      <button className="new-chat" onClick={newChat}><Plus size={18}/>New conversation</button>
-      <nav className="sidebar-nav">
-        <p className="nav-label">Workspace</p>
-        <button className="nav-item active" aria-current="page"><MessageCircle size={18}/>Chat</button>
-        <button className="nav-item" onClick={()=>setStatus(`${history.length} saved conversations`)}><List size={18}/>Activity history<span className="nav-count">{history.length}</span></button>
-        <div className="history-head"><p className="nav-label history-label">Recent</p><button className="history-clear" onClick={clearHistory} disabled={!chats.length}><Trash2 size={14}/>Clear all</button></div>
-        {history.length ? history.map((chat)=><div className={`history-row ${current?.id===chat.id?"active":""}`} key={chat.id}><button className="history-item" title={chat.title} aria-current={current?.id===chat.id?"true":undefined} onClick={()=>{setCurrent(chat);setSidebarOpen(false);goTo(`/chat/${chat.id}`)}}><span>{chat.title}</span></button><button className="history-delete" onClick={()=>deleteChat(chat.id)} aria-label={`Delete ${chat.title}`}><X size={15}/></button></div>) : <div className="empty-history"><MessageCircle size={18}/><span>Your saved chats will appear here.</span></div>}
-      </nav>
-      <div className="sidebar-bottom">
-        <div className="profile-row"><span className="profile-avatar">{user.avatar?<img src={user.avatar} alt=""/>:<User size={16}/>}</span><span className="profile-copy"><strong>{user.name}</strong>{user.email&&<small>{user.email}</small>}</span></div>
-        <div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>AI settings</button><button onClick={signOut}><LogOut size={17}/>Sign out</button></div>
-      </div>
-    </aside>
+    <Sidebar t={labels} open={sidebarOpen} user={user} projects={projects} chats={chats} currentChatId={current?.id ?? null} activeProjectId={activeProjectId} titlingChatId={titlingChatId}
+      onClose={()=>setSidebarOpen(false)} onNewChat={newChat} onCreateProject={()=>{setSidebarOpen(false);setProjectModalOpen(true)}} onOpenProject={openProject} onDeleteProject={setProjectToDelete}
+      onOpenChat={openChat} onDeleteChat={deleteChat} onClearChats={clearHistory}
+      onOpenSettings={()=>{setSidebarOpen(false);setSettingsOpen(true)}} onOpenLanguage={()=>{setSidebarOpen(false);setLanguageOpen(true)}} onOpenHelp={()=>{setSidebarOpen(false);setHelpOpen(true)}} onSignOut={signOut}/>
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"/>}
     <section className="chat-main">
       <header className="chat-header">
-        <div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Menu size={20}/></button><h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
+        <div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Menu size={20}/></button>{currentProject&&<><button className="chat-crumb" title={currentProject.goal} onClick={()=>openProject(currentProject)}>{currentProject.name}</button><span className="crumb-sep" aria-hidden="true">/</span></>}<h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
       </header>
       <div className="chat-scroll-wrap">
         <div className="chat-content" ref={scrollRef} onScroll={onScroll}>
-          {!hasMessages ? <div className="welcome-state">
+          {showProjectHome ? <div className="welcome-state project-welcome">
+            <span className="brand-mark large"><Folder size={26}/></span>
+            <h1>{routeProject!.name}</h1>
+            <p className="welcome-copy">{routeProject!.goal}</p>
+          </div> : !hasMessages ? <div className="welcome-state">
             <span className="brand-mark large"><BookOpen size={26}/></span>
             <h1>Hi, {displayName}.</h1>
             <p className="welcome-copy">What would you like to learn or get done today?</p>
@@ -328,5 +392,9 @@ export default function LearnGPT() {
         </div>
         <p>Your chats are saved to your LearnGPT account. LearnGPT can make mistakes.</p>
       </div>
-    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label="Close image" onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} onClose={()=>setSettingsOpen(false)} onSave={saveSettings}/>}</main>;
+    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label="Close image" onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} onClose={()=>setSettingsOpen(false)} onSave={saveSettings}/>}
+    {projectModalOpen&&<ProjectModal t={labels} onClose={()=>setProjectModalOpen(false)} onCreate={createProject}/>}
+    {projectToDelete&&<DeleteProjectModal t={labels} project={projectToDelete} chatCount={chats.filter((chat)=>chat.projectId===projectToDelete.id&&chat.messages.length).length} onClose={()=>setProjectToDelete(null)} onConfirm={()=>deleteProject(projectToDelete)}/>}
+    {languageOpen&&<LanguageModal t={labels} lang={lang} onClose={()=>setLanguageOpen(false)} onSelect={changeLang}/>}
+    {helpOpen&&<HelpModal t={labels} onClose={()=>setHelpOpen(false)}/>}</main>;
 }

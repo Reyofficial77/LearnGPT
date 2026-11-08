@@ -1,22 +1,23 @@
 /* =========================================================================
    LearnGPT — design tokens
    Palette (from the brief): bright blue primary, light blue secondary,
-   background #313338, card #1e1e1e, text #f5f5f5.
+   page background #191919, raised surfaces (sidebar, popups, cards) #30302E.
    Type: Bricolage Grotesque (brand + headlines), Figtree (everything else).
    Scale: 13 / 14 / 16 / 18 / 22 / 30+  — nothing under 13px.
    ========================================================================= */
 :root {
   color-scheme: dark;
-  --bg: #313338;
-  --panel: #1e1e1e;
-  --surface: #2b2d31;
-  --surface-2: #383a40;
+  --bg: #191919;       /* page background */
+  --panel: #30302E;    /* sidebar, popups, dialogs, cards, composer */
+  --surface: #30302E;
+  --surface-2: #3b3b38; /* hover / raised inside a panel */
+  --surface-3: #4a4a47;
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.16);
 
-  --text: #f5f5f5;
-  --text-2: #dcdee3;
-  --muted: #a8abb3;
+  --text: #f3f2ef;
+  --text-2: #dbd9d4;
+  --muted: #a5a39d;
 
   --blue: #2684ff;
   --blue-bright: #4a9bff;
@@ -165,7 +166,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   color: var(--text); background: var(--panel); font-size: 16px; font-weight: 400;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
-.field input::placeholder { color: #7d808a; }
+.field input::placeholder { color: #8f8d87; }
 .field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
 .input-wrap { position: relative; display: block; }
 .input-wrap input { padding-right: 48px; }
@@ -206,10 +207,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .sidebar {
   width: 280px; flex: 0 0 280px; height: 100%; min-height: 0;
   display: flex; flex-direction: column;
-  padding: calc(18px + var(--safe-top)) 14px calc(12px + var(--safe-bottom));
+  padding: calc(18px + var(--safe-top)) 12px calc(12px + var(--safe-bottom));
   background: var(--panel); border-right: 1px solid var(--line);
 }
-.sidebar-top { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 18px; }
+.sidebar-top { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 18px; }
 .close-sidebar, .menu-button { display: none; }
 
 .new-chat {
@@ -219,20 +220,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 .new-chat:hover { background: var(--blue-solid-hover); }
 
-.sidebar-nav { flex: 1; min-height: 0; margin: 20px -6px 0 0; padding-right: 6px; overflow-x: hidden; overflow-y: auto; }
-.nav-label { margin: 0 0 6px 10px; color: var(--muted); font-size: 13px; font-weight: 600; }
+/* Scrolling middle: Workspace (projects) first, then plain Chat history. */
+.sidebar-scroll { flex: 1; min-height: 0; margin: 20px -6px 0 -2px; padding: 0 6px 8px 2px; overflow-x: hidden; overflow-y: auto; }
+.side-section + .side-section { margin-top: 24px; }
+.side-head { min-height: 30px; display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; padding: 0 2px 0 10px; }
+.nav-label { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.side-count { min-width: 22px; padding: 0 7px; border-radius: 999px; text-align: center; color: var(--muted); background: rgba(255, 255, 255, 0.08); font-size: 12px; font-weight: 600; line-height: 20px; }
 
-.nav-item, .history-item {
-  width: 100%; display: flex; align-items: center; border: 0; color: var(--muted); background: transparent; text-align: left;
-}
-.nav-item { gap: 12px; min-height: 42px; padding: 0 12px; margin-bottom: 2px; border-radius: 10px; font-size: 15px; }
-.nav-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
-.nav-item.active { color: var(--text); background: var(--blue-tint); }
-.nav-item.active svg { color: var(--blue-bright); }
-.nav-count { margin-left: auto; min-width: 24px; padding: 1px 8px; border-radius: 999px; text-align: center; color: var(--muted); background: rgba(255, 255, 255, 0.07); font-size: 13px; }
-
-.history-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 6px; padding-right: 6px; }
-.history-head .nav-label { margin-bottom: 0; }
 .history-clear {
   display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 8px; border: 0; border-radius: var(--r-sm);
   color: var(--muted); background: transparent; font-size: 13px;
@@ -240,27 +234,63 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .history-clear:hover:not(:disabled) { color: var(--danger); background: var(--danger-bg); }
 .history-clear:disabled { opacity: 0.4; }
 
-.history-row { display: flex; align-items: center; gap: 2px; border-radius: 10px; }
-.history-row:hover { background: rgba(255, 255, 255, 0.05); }
-.history-row.active { background: var(--blue-tint); }
-.history-item { flex: 1; min-width: 0; min-height: 42px; padding: 0 6px 0 12px; border-radius: 10px; font-size: 15px; }
-.history-row:hover .history-item, .history-row.active .history-item { color: var(--text); }
-.history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.history-delete {
-  width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; margin-right: 4px;
-  border: 0; border-radius: var(--r-sm); color: var(--muted); background: transparent; opacity: 0;
+/* One row pattern for projects and chats: label button + optional actions. */
+.side-row { display: flex; align-items: center; gap: 2px; border-radius: 10px; transition: background-color 140ms ease; }
+.side-row:hover { background: rgba(255, 255, 255, 0.06); }
+.side-row.active { background: var(--blue-tint); }
+.row-main {
+  flex: 1; min-width: 0; min-height: 40px; display: flex; align-items: center; gap: 11px; padding: 0 6px 0 12px;
+  border: 0; border-radius: 10px; color: var(--muted); background: transparent; text-align: left; font-size: 15px;
 }
-.history-row:hover .history-delete, .history-row.active .history-delete, .history-delete:focus-visible { opacity: 1; }
-.history-delete:hover { color: var(--danger); background: var(--danger-bg); }
-@media (hover: none) { .history-delete { opacity: 1; } }
+.side-row:hover .row-main, .side-row.active .row-main { color: var(--text); }
+.row-icon { flex: 0 0 auto; }
+.side-row.active .row-icon { color: var(--blue-bright); }
+.row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-label.is-titling { animation: pulse 1.4s ease-in-out infinite; }
+.row-action {
+  width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 8px; color: var(--muted); background: transparent; opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+.row-action:last-child { margin-right: 4px; }
+.side-row:hover .row-action, .side-row.active .row-action, .row-action:focus-visible { opacity: 1; }
+.row-action:hover { color: var(--text); background: rgba(255, 255, 255, 0.09); }
+.row-action.danger:hover { color: var(--danger); background: var(--danger-bg); }
+.row-action.chevron { opacity: 1; }
+.row-action.chevron svg { transition: transform 160ms ease; }
+.row-action.chevron svg.collapsed { transform: rotate(-90deg); }
+@media (hover: none) { .row-action { opacity: 1; } }
+
+/* "Project" button: creates a project (dialog). It is the only item while no project exists. */
+.side-add {
+  width: 100%; min-height: 40px; display: flex; align-items: center; gap: 11px; margin-bottom: 2px; padding: 0 12px;
+  border: 0; border-radius: 10px; color: var(--muted); background: transparent; text-align: left; font-size: 15px;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.side-add:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.side-add .add-plus { margin-left: auto; flex: 0 0 auto; }
+
+/* Chats of a project sit under it, hung on a guide line that starts under the folder icon. */
+.project { margin-top: 2px; }
+.project-chats { margin: 2px 0 6px 20px; padding-left: 8px; border-left: 1px solid var(--line-strong); }
+.project-chats .row-main { min-height: 36px; padding-left: 10px; font-size: 14px; }
+.project-empty { margin: 4px 0 8px 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 
 .empty-history {
-  display: flex; align-items: center; gap: 10px; margin: 4px 0 0 4px; padding: 14px;
+  display: flex; align-items: center; gap: 10px; margin: 4px 0 0 2px; padding: 14px;
   border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--muted); font-size: 14px; line-height: 1.45;
 }
+.empty-history svg { flex: 0 0 auto; }
 
-.sidebar-bottom { flex: 0 0 auto; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
-.profile-row { display: flex; align-items: center; gap: 12px; padding: 4px 6px 10px; }
+/* Account: avatar + name + email; opens the menu upwards. */
+.sidebar-account { position: relative; flex: 0 0 auto; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.account-trigger {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px; border: 0; border-radius: 12px;
+  background: transparent; text-align: left; transition: background-color 140ms ease;
+}
+.account-trigger:hover, .account-trigger[aria-expanded="true"] { background: rgba(255, 255, 255, 0.07); }
+.account-chevron { flex: 0 0 auto; color: var(--muted); transition: transform 160ms ease; }
+.account-trigger[aria-expanded="true"] .account-chevron { transform: rotate(180deg); }
 .profile-avatar {
   width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden;
   border-radius: 50%; color: #d5e8ff; background: #365a82; font-size: 13px; font-weight: 700;
@@ -271,13 +301,22 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .profile-copy strong { font-size: 15px; font-weight: 600; }
 .profile-copy small { margin-top: 1px; color: var(--muted); font-size: 13px; }
 
-.sidebar-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.sidebar-actions button {
-  min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 8px;
-  border: 1px solid var(--line); border-radius: 10px; color: var(--text-2); background: transparent; font-size: 14px; font-weight: 550;
-  transition: background-color 160ms ease, border-color 160ms ease;
+.account-menu {
+  position: absolute; z-index: 30; left: 0; right: 0; bottom: calc(100% + 8px); padding: 6px;
+  border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55); animation: rise-in 130ms ease-out both;
 }
-.sidebar-actions button:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--line-strong); }
+.account-menu-email { margin: 0; padding: 8px 10px 10px; overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu [role="menuitem"] {
+  width: 100%; min-height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 10px;
+  border: 0; border-radius: 9px; color: var(--text-2); background: transparent; text-align: left; font-size: 15px;
+}
+.account-menu [role="menuitem"]:hover, .account-menu [role="menuitem"]:focus-visible { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.account-menu [role="menuitem"]:focus-visible { outline-offset: -2px; }
+.account-menu [role="menuitem"] svg { flex: 0 0 auto; }
+.account-menu kbd { margin-left: auto; flex: 0 0 auto; color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap; }
+.menu-sep { height: 1px; margin: 6px 4px; background: var(--line); }
+@media (hover: none) { .account-menu kbd { display: none; } }
 
 .sidebar-backdrop { display: none; }
 
@@ -289,7 +328,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   padding: var(--safe-top) 20px 0; border-bottom: 1px solid var(--line); background: var(--bg);
 }
 .header-left { min-width: 0; flex: 1; display: flex; align-items: center; gap: 10px; }
-.chat-title { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 650; }
+.chat-title { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 650; }
+.chat-crumb { flex: 0 1 auto; max-width: 32%; padding: 4px 0; overflow: hidden; border: 0; color: var(--muted); background: transparent; font-size: 16px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.chat-crumb:hover { color: var(--text); }
+.crumb-sep { flex: 0 0 auto; margin: 0 -2px; color: var(--muted); opacity: 0.6; }
 
 
 /* =========================================================================
@@ -311,6 +353,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   margin: 22px 0 0; font-family: var(--font-display); font-size: clamp(34px, 5vw, 46px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 700;
 }
 .welcome-copy { margin: 10px 0 0; color: var(--muted); font-size: 18px; line-height: 1.5; }
+.project-welcome .welcome-copy { max-width: 56ch; overflow-wrap: anywhere; white-space: pre-wrap; }
+.project-welcome h1 { overflow-wrap: anywhere; }
 
 .prompt-grid {
   width: 100%; margin-top: 32px; display: flex; flex-direction: column;
@@ -406,7 +450,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   border: 1px solid var(--line-strong); border-radius: 50%; color: var(--text); background: var(--surface-2);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); transition: background-color 160ms ease;
 }
-.jump-bottom:hover { background: #44464d; }
+.jump-bottom:hover { background: var(--surface-3); }
 
 /* =========================================================================
    Composer
@@ -419,13 +463,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 .composer:focus-within { border-color: rgba(74, 155, 255, 0.7); box-shadow: 0 0 0 3px var(--blue-tint), 0 6px 20px rgba(0, 0, 0, 0.18); }
-.composer.dragging { border-color: var(--blue-bright); background: #1c2430; }
+.composer.dragging { border-color: var(--blue-bright); background: #2f3b4a; }
 .composer-row { display: flex; align-items: flex-end; gap: 6px; }
 .composer textarea {
   flex: 1; min-width: 0; min-height: 28px; max-height: 220px; margin: 0; padding: 9px 4px;
   border: 0; outline: 0; resize: none; overflow-y: auto; color: var(--text); background: transparent; font-size: 16px; line-height: 1.5;
 }
-.composer textarea::placeholder { color: #7d808a; }
+.composer textarea::placeholder { color: #8f8d87; }
 
 .attach-button, .send-button { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; }
 .attach-button { border-radius: 14px; color: var(--muted); background: transparent; transition: color 160ms ease, background-color 160ms ease; }
@@ -437,15 +481,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .attach-menu-wrap, .model-picker-wrap { position: relative; flex: 0 0 auto; }
 .model-picker-trigger {
   height: 42px; max-width: 162px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px;
-  border: 1px solid var(--line); border-radius: 14px; color: var(--text-2); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 14px; color: var(--text-2); background: var(--surface-2);
   font-size: 13px; font-weight: 600; white-space: nowrap; transition: border-color 160ms ease, background-color 160ms ease;
 }
 .model-picker-trigger span { overflow: hidden; text-overflow: ellipsis; }
-.model-picker-trigger:hover, .model-picker-trigger[aria-expanded="true"] { border-color: var(--line-strong); background: var(--surface-2); }
+.model-picker-trigger:hover, .model-picker-trigger[aria-expanded="true"] { border-color: var(--line-strong); background: var(--surface-3); }
 .model-picker-trigger:focus-visible, .attach-button:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 2px; }
 .composer-menu {
   position: absolute; z-index: 35; bottom: calc(100% + 10px); overflow: hidden; padding: 6px;
-  border: 1px solid var(--line-strong); border-radius: 14px; background: #24262b;
+  border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36); animation: rise-in 130ms ease-out both;
 }
 .attach-menu { left: 0; width: 250px; }
@@ -466,7 +510,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .attachment img { width: 100%; height: 100%; display: block; border-radius: inherit; object-fit: cover; }
 .attachment-file {
   position: relative; width: 210px; min-height: 72px; display: flex; align-items: center; gap: 10px; padding: 12px 36px 12px 13px;
-  border: 1px solid var(--line); border-radius: 13px; color: var(--blue-light); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 13px; color: var(--blue-light); background: var(--bg);
 }
 .attachment-file span { min-width: 0; overflow: hidden; color: var(--text-2); font-size: 13px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-file .attachment-remove { top: 7px; right: 7px; width: 24px; height: 24px; border: 0; box-shadow: none; background: rgba(255, 255, 255, 0.08); }
@@ -476,21 +520,21 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 
 .attachment-remove {
   position: absolute; top: -9px; right: -9px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0;
-  border: 1px solid var(--line-strong); border-radius: 50%; color: #fff; background: #4a4c53; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line-strong); border-radius: 50%; color: #fff; background: var(--surface-3); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 .attachment-remove:hover { background: #d9534f; }
 .attachment-loading { display: grid; place-items: center; }
 .attachment-loading i { width: 24px; height: 24px; border: 2px solid rgba(255, 255, 255, 0.15); border-top-color: var(--blue-bright); border-radius: 50%; animation: spin 0.7s linear infinite; }
 .drop-hint {
   position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 10px;
-  border-radius: inherit; color: #cfe3ff; background: rgba(30, 30, 30, 0.94); font-size: 15px; font-weight: 600; pointer-events: none;
+  border-radius: inherit; color: #cfe3ff; background: rgba(48, 48, 46, 0.94); font-size: 15px; font-weight: 600; pointer-events: none;
 }
 
 .lightbox { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(8, 9, 11, 0.9); cursor: zoom-out; animation: fade-in 160ms ease-out both; }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; cursor: default; object-fit: contain; }
 .lightbox-close {
   position: absolute; top: calc(16px + var(--safe-top)); right: 16px; width: 44px; height: 44px; display: grid; place-items: center; padding: 0;
-  border: 1px solid var(--line-strong); border-radius: 50%; color: #fff; background: rgba(43, 45, 49, 0.9);
+  border: 1px solid var(--line-strong); border-radius: 50%; color: #fff; background: rgba(48, 48, 46, 0.9);
 }
 
 /* =========================================================================
@@ -498,7 +542,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
    ========================================================================= */
 .markdown-content .code-block { margin: 16px 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
 .code-block.is-file { border-color: rgba(74, 155, 255, 0.4); }
-.code-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); background: #26272b; }
+.code-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); background: #262624; }
 .code-label { min-width: 0; display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
 .code-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
@@ -514,7 +558,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .markdown-content .code-block pre code.hljs { display: block; padding: 0; color: #d6e2f5; background: transparent; font-size: 13.5px; line-height: 1.65; white-space: pre; tab-size: 2; }
 .preview-frame { display: block; width: 100%; height: 440px; border: 0; background: #fff; resize: vertical; }
 .preview-overlay { position: fixed; z-index: 80; inset: 0; display: flex; flex-direction: column; background: var(--panel); }
-.preview-overlay-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: calc(10px + var(--safe-top)) 14px 10px; border-bottom: 1px solid var(--line); background: #26272b; }
+.preview-overlay-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: calc(10px + var(--safe-top)) 14px 10px; border-bottom: 1px solid var(--line); background: #262624; }
 .preview-frame.full { flex: 1; height: auto; min-height: 0; resize: none; }
 
 .hljs-comment, .hljs-quote { color: #8190a4; font-style: italic; }
@@ -547,13 +591,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .settings-field { display: grid; gap: 8px; color: var(--text-2); font-size: 14px; font-weight: 600; }
 .settings-field input, .settings-field textarea {
   width: 100%; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--r-md); outline: 0;
-  color: var(--text); background-color: var(--panel); font-size: 16px; font-weight: 400;
+  color: var(--text); background-color: var(--bg); font-size: 16px; font-weight: 400;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 .settings-field input { height: 48px; }
 .settings-field textarea { min-height: 132px; padding: 12px 14px; line-height: 1.55; resize: vertical; }
 .settings-field input:focus, .settings-field textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
-.settings-field input::placeholder, .settings-field textarea::placeholder { color: #7d808a; }
+.settings-field input::placeholder, .settings-field textarea::placeholder { color: #8f8d87; }
 .settings-field small { color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.5; }
 .settings-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 16px 22px; border-top: 1px solid var(--line); }
 .settings-save-error { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; margin: 0 0 2px; color: var(--danger); font-size: 14px; }
@@ -563,6 +607,27 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .settings-save { border: 0; color: #fff; background: var(--blue-solid); }
 .settings-save:hover:not(:disabled) { background: var(--blue-solid-hover); }
 .settings-save:disabled { opacity: 0.6; }
+
+/* ---------- Sidebar dialogs (project, delete, language, help) ---------- */
+.settings-save.danger { background: #c0392b; }
+.settings-save.danger:hover:not(:disabled) { background: #a93226; }
+.dialog-copy { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.settings-field .field-line { display: flex; justify-content: space-between; gap: 12px; }
+.settings-field .slug-preview { overflow: hidden; color: var(--blue-light); font-family: var(--font-mono); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.lang-list { display: grid; gap: 8px; padding: 18px 22px 22px; }
+.lang-option {
+  min-height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-md); color: var(--text-2); background: transparent; text-align: left; font-size: 15px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.lang-option:hover { background: rgba(255, 255, 255, 0.06); }
+.lang-option[aria-checked="true"] { color: #fff; border-color: rgba(74, 155, 255, 0.65); background: var(--blue-tint); }
+.lang-option svg { color: var(--blue-light); }
+.help-list { margin: 0; padding: 4px 22px 18px; overflow-y: auto; }
+.help-list > div { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.help-list > div:last-child { border-bottom: 0; }
+.help-list dt { font-size: 15px; font-weight: 650; }
+.help-list dd { margin: 3px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
 
 /* =========================================================================
    Scrollbars
@@ -609,7 +674,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .sidebar-backdrop { display: block; position: fixed; z-index: 15; inset: 0; border: 0; background: rgba(0, 0, 0, 0.6); animation: fade-in 200ms ease-out both; }
 
   .chat-header { padding-left: 12px; padding-right: 14px; }
-  .nav-item, .history-item { min-height: 46px; }
+  .row-main, .side-add { min-height: 46px; }
+  .project-chats .row-main { min-height: 42px; }
 }
 
 @media (max-width: 640px) {
@@ -654,6 +720,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   .settings-body { padding: 18px; }
   .settings-footer { padding: 14px 18px calc(14px + var(--safe-bottom)); }
   .settings-cancel, .settings-save { flex: 1; min-height: 48px; }
+  .lang-list { padding: 16px 18px calc(20px + var(--safe-bottom)); }
+  .help-list { padding: 4px 18px calc(16px + var(--safe-bottom)); }
 }
 
 @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

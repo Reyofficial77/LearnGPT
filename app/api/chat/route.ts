@@ -7,6 +7,7 @@ import { APP_CAPABILITIES } from "../../../lib/ai-instructions";
 import { describeAiError } from "../../../lib/ai-errors";
 import { extractAttachment, textFromAttachment, type ExtractedAttachment } from "../../../lib/file-extract";
 import { loadMemoryContext, updateMemoryFromConversation } from "../../../lib/memory";
+import { generateChatTitle, fallbackTitle } from "../../../lib/chat-title";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -73,7 +74,7 @@ function textOf(message: Msg) {
   return [message.content, imageNote, fileText].filter(Boolean).join("\n");
 }
 
-async function persist(chatId: string, userId: string, messages: Msg[], assistantText: string) {
+async function persist(chatId: string, userId: string, messages: Msg[], assistantText: string, title?: string) {
   const chat = await prisma.chat.findFirst({ where: { id: chatId, userId } });
   if (!chat) return;
   const existing = await prisma.message.count({ where: { chatId } });
@@ -92,7 +93,7 @@ async function persist(chatId: string, userId: string, messages: Msg[], assistan
   await prisma.message.create({ data: { chatId, role: "assistant", content: assistantText } });
   if (existing === 0) {
     const first = messages[0];
-    await prisma.chat.update({ where: { id: chatId }, data: { title: (first?.content || (first?.images.length || first?.attachments.length ? "Attachment" : "New conversation")).slice(0, 80) } });
+    await prisma.chat.update({ where: { id: chatId }, data: { title: (title || fallbackTitle(first?.content || "", !!first?.attachments.length, !!first?.images.length)).slice(0, 80) } });
   }
 }
 
@@ -112,9 +113,15 @@ export async function POST(request: NextRequest) {
     if (!model) return NextResponse.json({ error: "Invalid LearnGPT model." }, { status: 400 });
 
     const memory = await loadMemoryContext(user.id);
+    // Chats inside a project get the project's name and goal as context.
+    const chatRecord = chatId ? await prisma.chat.findFirst({ where: { id: chatId, userId: user.id }, include: { project: true } }) : null;
+    const projectContext = chatRecord?.project
+      ? `## Project context\nThis conversation belongs to the user's project "${chatRecord.project.name}".\nProject goal: ${chatRecord.project.goal}\nKeep your answers relevant to this goal when it makes sense.`
+      : "";
     const systemPrompt = [
       APP_CAPABILITIES,
       customInstructions,
+      projectContext,
       memory.userTemplate,
       "## Private memory for this signed-in user (USER.md)",
       memory.user,
@@ -129,8 +136,14 @@ export async function POST(request: NextRequest) {
         ...(message.images.length ? { images: message.images.map((image) => image.data) } : {})
       }))
     ];
-    const text = await ollamaChat(model, payload);
-    if (chatId) await persist(chatId, user.id, messages, text);
+    // First message of a chat: the AI writes a short title from the user's first prompt, in parallel with the answer.
+    const isFirstMessage = !!chatRecord && messages.length === 1 && (await prisma.message.count({ where: { chatId } })) === 0;
+    const firstMessage = messages[0];
+    const titlePromise: Promise<string | null> = isFirstMessage
+      ? generateChatTitle(model, firstMessage.content, firstMessage.attachments.length > 0, firstMessage.images.length > 0)
+      : Promise.resolve(null);
+    const [text, title] = await Promise.all([ollamaChat(model, payload), titlePromise]);
+    if (chatId) await persist(chatId, user.id, messages, text, title || undefined);
 
     await updateMemoryFromConversation({
       userId: user.id,
@@ -140,7 +153,7 @@ export async function POST(request: NextRequest) {
     });
 
     const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-    return NextResponse.json({ text, attachments: latestUserMessage?.attachments || [] });
+    return NextResponse.json({ text, ...(title ? { title } : {}), attachments: latestUserMessage?.attachments || [] });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Unsupported file type")) return NextResponse.json({ error: error.message }, { status: 415 });
     if (error instanceof Error && error.message.includes("must be 1 MB")) return NextResponse.json({ error: error.message }, { status: 413 });
