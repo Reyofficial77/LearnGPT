@@ -564,6 +564,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .code-label svg { flex: 0 0 auto; color: #f4f4f5; }
 .code-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-actions, .run-output-actions { display: inline-flex; align-items: center; gap: 7px; }
+.code-tabs { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(0,0,0,.13); }
+.code-tabs button { min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 999px; color: #c7cbd1; background: transparent; font-size: 12px; font-weight: 600; }
+.code-tabs button.on { color: #fff; background: rgba(255,255,255,.14); }
 .code-btn { height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; color: #f1f1f1; background: transparent; font-size: 13px; font-weight: 600; }
 .code-btn:hover { color: #fff; background: rgba(255,255,255,.09); }
 .code-btn.code-copy, .code-btn.code-download { width: 34px; padding: 0; }

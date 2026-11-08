@@ -1,7 +1,7 @@
 "use client";
 import { Children, type ReactNode, isValidElement, memo, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Code, Copy, Download, Maximize2, Play, X } from "react-feather";
+import { Check, Code, Copy, Download, Eye, FileText, Maximize2, Play, RefreshCw, X } from "react-feather";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js/lib/core";
@@ -45,10 +45,6 @@ export function buildPreviewDoc(code: string, kind: "html" | "svg"): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;margin:16px;color:#111;background:#fff}</style></head><body>${code}</body></html>`;
 }
 
-function buildCssPreviewDoc(code: string) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;margin:0;padding:32px;background:#f5f6f8;color:#222}main{max-width:720px;margin:8vh auto;padding:28px;border-radius:16px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.08)}button{padding:10px 16px;border:0;border-radius:8px;background:#246bce;color:white}</style><style>${code}</style></head><body><main><h1>CSS Preview</h1><p>This sample page shows how your CSS styles are applied.</p><button type="button">Sample button</button></main></body></html>`;
-}
-
 function escapeHtml(value: string) { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function highlight(code: string, lang: string): string {
   try { if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch { /* fall through */ }
@@ -85,30 +81,29 @@ function PreviewFrame({ doc, className }: { doc: string; className: string }) {
 
 function CodeBlock({ rawLang, code }: { rawLang: string; code: string }) {
   const info = useMemo(() => parseFenceLang(rawLang), [rawLang]);
+  const fullHtmlDocument = info.previewKind === "html" && /<!doctype|<html[\s>]/i.test(code);
+  const [tab, setTab] = useState<"preview" | "code">(info.previewKind && (fullHtmlDocument || info.previewKind === "svg" || info.isFile) ? "preview" : "code");
   const [copied, setCopied] = useState(false);
-  const [showOutput, setShowOutput] = useState(false);
-  const [fullOutput, setFullOutput] = useState(false);
+  const [fullPreview, setFullPreview] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [runKey, setRunKey] = useState(0);
+  const [showOutput, setShowOutput] = useState(false);
   const html = useMemo(() => highlight(code, info.lang), [code, info.lang]);
   const isPython = ["python", "py", "python3"].includes(info.lang);
   const isJavaScript = ["js", "javascript", "mjs", "cjs"].includes(info.lang);
-  const isVisual = Boolean(info.previewKind) || info.lang === "css";
-  const canRun = !info.isFile && (isPython || isJavaScript || isVisual);
-  const outputDoc = useMemo(() => {
-    if (info.previewKind) return buildPreviewDoc(code, info.previewKind);
-    if (info.lang === "css") return buildCssPreviewDoc(code);
-    return buildRunnerDoc(code, info.lang);
-  }, [code, info.lang, info.previewKind]);
+  const canRun = !info.isFile && (isPython || isJavaScript);
+  const previewDoc = useMemo(() => info.previewKind ? buildPreviewDoc(code, info.previewKind) : "", [code, info.previewKind]);
+  const runDoc = useMemo(() => canRun ? buildRunnerDoc(code, info.lang) : "", [canRun, code, info.lang]);
   const label = info.isFile ? info.filename : LANGUAGE_LABELS[info.lang] || (info.lang ? info.lang.charAt(0).toUpperCase() + info.lang.slice(1) : "Code");
   const downloadName = info.isFile ? info.filename : `code.${DEFAULT_EXT[info.lang] || "txt"}`;
   const downloadExt = info.isFile ? info.ext : DEFAULT_EXT[info.lang] || "txt";
 
   useEffect(() => {
-    if (!fullOutput) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setFullOutput(false); };
+    if (!fullPreview) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setFullPreview(false); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fullOutput]);
+  }, [fullPreview]);
 
   const onCopy = async () => {
     if (await copyText(code)) { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }
@@ -117,24 +112,31 @@ function CodeBlock({ rawLang, code }: { rawLang: string; code: string }) {
 
   return <div className={`code-block ${info.isFile ? "is-file" : ""}`}>
     <div className="code-head">
-      <span className="code-label"><Code size={15} aria-hidden="true"/><span>{label}</span></span>
+      <span className="code-label">{info.isFile ? <FileText size={15} aria-hidden="true"/> : <Code size={15} aria-hidden="true"/>}<span>{label}</span></span>
       <span className="code-actions">
-        <button className="code-btn code-copy" onClick={onCopy} aria-label={copied ? "Copied" : "Copy code"} title={copied ? "Copied" : "Copy code"}>{copied ? <Check size={16}/> : <Copy size={16}/>}</button>
-        {canRun && <button className="code-btn run-code" onClick={onRun} title="Run code"><Play size={15}/><span>Run</span></button>}
-        {info.isFile && <button className="code-btn code-download" onClick={() => downloadText(downloadName, code, downloadExt)} aria-label={`Download ${downloadName}`} title={`Download ${downloadName}`}><Download size={15}/></button>}
+        {info.previewKind && <span className="code-tabs" role="tablist" aria-label="HTML preview tabs">
+          <button type="button" role="tab" aria-selected={tab === "preview"} className={tab === "preview" ? "on" : ""} onClick={() => setTab("preview")}><Eye size={12}/>Preview</button>
+          <button type="button" role="tab" aria-selected={tab === "code"} className={tab === "code" ? "on" : ""} onClick={() => setTab("code")}><Code size={12}/>Code</button>
+        </span>}
+        {info.previewKind && tab === "preview" && <>
+          <button type="button" className="code-btn" onClick={() => setReloadKey((key) => key + 1)} aria-label="Reload preview" title="Reload preview"><RefreshCw size={14}/></button>
+          <button type="button" className="code-btn" onClick={() => setFullPreview(true)} aria-label="Fullscreen preview" title="Fullscreen preview"><Maximize2 size={14}/></button>
+        </>}
+        {canRun && <button type="button" className="code-btn run-code" onClick={onRun} title="Run code"><Play size={14}/><span>Run</span></button>}
+        <button type="button" className="code-btn code-copy" onClick={onCopy} aria-label={copied ? "Copied" : "Copy code"} title={copied ? "Copied" : "Copy code"}>{copied ? <Check size={15}/> : <Copy size={15}/>}</button>
+        {(info.isFile || info.previewKind) && <button type="button" className="code-btn code-download" onClick={() => downloadText(downloadName, code, downloadExt)} aria-label={`Download ${downloadName}`} title={`Download ${downloadName}`}><Download size={14}/></button>}
       </span>
     </div>
-    <div className="code-body"><pre><code className="hljs" dangerouslySetInnerHTML={{ __html: html }}/></pre></div>
-    {canRun && showOutput && <div className={`run-output ${isVisual ? "visual-output" : "console-output"}`}>
-      <div className="run-output-head"><strong>{isVisual ? "Preview" : "Output"}</strong><span className="run-output-actions">
-        {isVisual && <button className="code-btn" onClick={() => setFullOutput(true)} aria-label="Fullscreen preview" title="Fullscreen preview"><Maximize2 size={14}/></button>}
-        <button className="code-btn" onClick={() => setShowOutput(false)} aria-label="Close output" title="Close output"><X size={14}/></button>
-      </span></div>
-      <iframe key={runKey} className={`run-frame ${isVisual ? "visual" : "console"}`} sandbox="allow-scripts allow-forms allow-modals allow-popups" srcDoc={outputDoc} title={`${label} ${isVisual ? "preview" : "output"}`} referrerPolicy="no-referrer"/>
+    {info.previewKind && tab === "preview"
+      ? <PreviewFrame key={reloadKey} doc={previewDoc} className="preview-frame"/>
+      : <div className="code-body"><pre><code className="hljs" dangerouslySetInnerHTML={{ __html: html }}/></pre></div>}
+    {canRun && showOutput && <div className="run-output console-output">
+      <div className="run-output-head"><strong>Output</strong><span className="run-output-actions"><button type="button" className="code-btn" onClick={() => setShowOutput(false)} aria-label="Close output" title="Close output"><X size={14}/></button></span></div>
+      <iframe key={runKey} className="run-frame console" sandbox="allow-scripts" srcDoc={runDoc} title={`${label} output`} referrerPolicy="no-referrer"/>
     </div>}
-    {fullOutput && typeof document !== "undefined" && createPortal(<div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Fullscreen code preview">
-      <div className="preview-overlay-bar"><strong>{label} Preview</strong><button className="code-btn" onClick={() => setFullOutput(false)} aria-label="Close preview" title="Close preview"><X size={16}/><span>Close</span></button></div>
-      <PreviewFrame key={`full-${runKey}`} doc={outputDoc} className="preview-frame full"/>
+    {fullPreview && typeof document !== "undefined" && createPortal(<div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Fullscreen preview">
+      <div className="preview-overlay-bar"><strong>{label} Preview</strong><button type="button" className="code-btn" onClick={() => setFullPreview(false)} aria-label="Close preview" title="Close preview"><X size={16}/><span>Close</span></button></div>
+      <PreviewFrame key={`full-${reloadKey}`} doc={previewDoc} className="preview-frame full"/>
     </div>, document.body)}
   </div>;
 }
