@@ -29,7 +29,7 @@ const dict = {
       ["Lampiran", "Tombol + di kolom pesan untuk menambahkan dokumen, file, atau gambar."],
       ["Pengaturan", "Atur tema dan instruksi belajar untuk AI. Pintasan: Ctrl+Shift+,"],
       ["Mengirim pesan", "Enter untuk mengirim, Shift+Enter untuk baris baru."],
-      ["Menjalankan kode", "Gunakan tombol Run pada blok JavaScript atau Python. HTML memiliki live preview."]
+      ["Menjalankan kode", "Buka Code Runner dari toolbar pesan untuk menulis dan menjalankan JavaScript atau Python, atau melihat preview HTML dan CSS. Blok kode JavaScript dan Python dari AI juga memiliki tombol Run."]
     ] as [string, string][],
     welcomeHeading: (name: string) => `Halo, ${name}.`,
     greetings: ["Apa yang ingin kamu pelajari atau selesaikan hari ini?", "Ada hal menarik yang ingin kita eksplorasi?", "Siap membantu. Mau mulai dari mana?", "Mari kita kerjakan sesuatu bersama hari ini.", "Apa yang sedang ingin kamu cari tahu?", "Punya ide atau tugas? Kita mulai dari sini."],
@@ -78,7 +78,7 @@ const dict = {
       ["Attachments", "Use the + button in the message box to add documents, files, or images."],
       ["Settings", "Customize the theme and learning instructions. Shortcut: Ctrl+Shift+,"],
       ["Sending messages", "Press Enter to send, Shift+Enter for a new line."],
-      ["Running code", "Use Run on JavaScript or Python code blocks. HTML includes a live preview."]
+      ["Running code", "Open Code Runner from the message toolbar to write and run JavaScript or Python, or preview HTML and CSS. JavaScript and Python code blocks from the AI also include a Run button."]
     ] as [string, string][],
     welcomeHeading: (name: string) => `Hi, ${name}.`,
     greetings: ["What would you like to learn or get done today?", "What are we exploring today?", "Ready when you are. Where should we start?", "Let’s make progress on something today.", "What are you curious about right now?", "Have an idea or task? Let’s get started."],

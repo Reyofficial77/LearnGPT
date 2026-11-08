@@ -1,8 +1,9 @@
 "use client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronUp, FileText, Folder, Image as ImageIcon, List, Menu, Mic, Paperclip, Plus, Send, X, Zap } from "react-feather";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronUp, Code as CodeIcon, FileText, Folder, Image as ImageIcon, List, Menu, Mic, Paperclip, Plus, Send, X, Zap } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
+import CodeRunnerModal from "./CodeRunnerModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import { DeleteProjectModal, HelpModal, LanguageModal, ProjectModal } from "./SidebarDialogs";
@@ -96,6 +97,7 @@ export default function LearnGPT() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [codeRunnerOpen, setCodeRunnerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [greetingIndex, setGreetingIndex] = useState(0);
   const [status, setStatus] = useState("");
@@ -473,6 +475,7 @@ export default function LearnGPT() {
             </div>
             <input ref={fileInputRef} type="file" accept={ACCEPTED_FILE_TYPES} multiple hidden onChange={(event)=>{if(event.target.files?.length)addDocuments(event.target.files);event.target.value=""}}/>
             <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(event)=>{if(event.target.files?.length)addImages(event.target.files);event.target.value=""}}/>
+            <button className="runner-trigger" onClick={()=>setCodeRunnerOpen(true)} aria-label="Code Runner" title="Code Runner"><CodeIcon size={17}/><span>Code Runner</span></button>
             <div className="model-picker-wrap" ref={modelMenuRef}>
               <button className="model-picker-trigger" aria-label={`${labels.chooseModel}, current model ${MODEL_LABELS[model]}`} aria-haspopup="listbox" aria-expanded={modelMenuOpen} onClick={()=>setModelMenuOpen((open)=>!open)}><span>{MODEL_LABELS[model]}</span><ChevronUp size={15}/></button>
               {modelMenuOpen&&<div className="composer-menu model-menu" role="listbox" aria-label={lang === "id" ? "Pilih model LearnGPT" : "Choose a LearnGPT model"}>
@@ -490,6 +493,7 @@ export default function LearnGPT() {
         <p>{labels.composerFooter}</p>
       </div>
     </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label={lang === "id" ? "Pratinjau gambar" : "Image preview"} onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label={labels.close} onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} t={labels} onClose={()=>setSettingsOpen(false)} onSave={saveSettings}/>}
+    {codeRunnerOpen&&<CodeRunnerModal lang={lang} onClose={()=>setCodeRunnerOpen(false)}/>}
     {projectModalOpen&&<ProjectModal t={labels} onClose={()=>setProjectModalOpen(false)} onCreate={createProject}/>}
     {projectToDelete&&<DeleteProjectModal t={labels} project={projectToDelete} chatCount={chats.filter((chat)=>chat.projectId===projectToDelete.id&&chat.messages.length).length} onClose={()=>setProjectToDelete(null)} onConfirm={()=>deleteProject(projectToDelete)}/>}
     {languageOpen&&<LanguageModal t={labels} lang={lang} onClose={()=>setLanguageOpen(false)} onSelect={changeLang}/>}
