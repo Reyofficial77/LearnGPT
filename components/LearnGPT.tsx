@@ -1,6 +1,6 @@
 "use client";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, BookOpen, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Star, User, X, Zap } from "react-feather";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Trash2, User, X, Zap } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import SettingsModal from "./SettingsModal";
@@ -12,9 +12,9 @@ type Chat = { id: string; title: string; messages: ChatMessage[]; updatedAt: num
 type PromptCard = { icon: ReactNode; title: string; copy: string };
 
 const promptCards: PromptCard[] = [
-  { icon: <BookOpen size={19} />, title: "Learn to code", copy: "Help me build my first React component" },
-  { icon: <List size={19} />, title: "Complete a task", copy: "Help me outline and improve my assignment" },
-  { icon: <Zap size={19} />, title: "Get work done", copy: "Draft a clear project update for my team" }
+  { icon: <BookOpen size={20} />, title: "Learn to code", copy: "Help me build my first React component" },
+  { icon: <List size={20} />, title: "Complete a task", copy: "Help me outline and improve my assignment" },
+  { icon: <Zap size={20} />, title: "Get work done", copy: "Draft a clear project update for my team" }
 ];
 
 const CHAT_PATH = /^\/chat\/([A-Za-z0-9-]+)\/?$/;
@@ -170,26 +170,57 @@ export default function LearnGPT() {
   const deleteChat = async (id:string) => { const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){setCurrent(null);goTo("/");}} };
   const clearHistory = async () => { await Promise.all(chats.map((chat)=>fetch(`/api/chats/${chat.id}`,{method:"DELETE"}))); setChats([]);setCurrent(null);setStatus("");if(routeChatId)goTo("/"); };
 
-  if (!user) return <main className="chat-shell"><div className="loading-screen"><div className="ai-badge"><BookOpen size={25}/></div><strong>Loading your LearnGPT workspace…</strong></div></main>;
+  const statusGood = /\bsaved\b/i.test(status);
+  const hasMessages = !!current?.messages.length;
+  const chatTitle = hasMessages ? current!.title : "New conversation";
+
+  if (!user) return <main className="chat-shell"><div className="loading-screen" role="status"><span className="brand-mark large"><BookOpen size={26}/></span><strong>Loading your workspace…</strong></div></main>;
   return <main className="chat-shell">
-    <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-      <div className="sidebar-top"><Brand compact onNavigate={newChat}/><button className="icon-button close-sidebar" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"><X size={19}/></button></div>
+    <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} aria-label="Conversations">
+      <div className="sidebar-top"><Brand compact onNavigate={newChat}/><button className="icon-button close-sidebar" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"><X size={20}/></button></div>
       <button className="new-chat" onClick={newChat}><Plus size={18}/>New conversation</button>
-      <nav className="sidebar-nav"><p className="nav-label">Workspace</p><button className="nav-item active"><MessageCircle size={18}/>Chat</button><button className="nav-item" onClick={()=>setStatus(`${history.length} saved conversations`)}><List size={18}/>Activity history<span className="nav-count">{history.length}</span></button><p className="nav-label history-label">Recent</p>
-      {history.length ? history.map((chat)=><div className={`history-row ${current?.id===chat.id?"active":""}`} key={chat.id}><button className="history-item" onClick={()=>{setCurrent(chat);setSidebarOpen(false);goTo(`/chat/${chat.id}`)}}><span>{chat.title}</span></button><button className="history-delete" onClick={()=>deleteChat(chat.id)} aria-label={`Delete ${chat.title}`}><X size={14}/></button></div>) : <div className="empty-history"><MessageCircle size={17}/><span>Your saved chats will appear here.</span></div>}</nav>
-      <div className="sidebar-bottom"><div className="upgrade-card"><span className="upgrade-icon"><Star size={17}/></span><span><strong>LearnGPT workspace</strong><small>Chats are saved securely</small></span></div><div className="profile-row"><span className="profile-avatar">{user.avatar?<img src={user.avatar} alt=""/>:<User size={15}/>}</span><span className="profile-copy"><strong>{user.name}</strong><small>{user.email}</small></span></div><div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={16}/>AI settings</button><button onClick={signOut}><LogOut size={16}/>Sign out</button><button onClick={clearHistory}><X size={16}/>Clear history</button></div></div>
+      <nav className="sidebar-nav">
+        <p className="nav-label">Workspace</p>
+        <button className="nav-item active" aria-current="page"><MessageCircle size={18}/>Chat</button>
+        <button className="nav-item" onClick={()=>setStatus(`${history.length} saved conversations`)}><List size={18}/>Activity history<span className="nav-count">{history.length}</span></button>
+        <div className="history-head"><p className="nav-label history-label">Recent</p><button className="history-clear" onClick={clearHistory} disabled={!chats.length}><Trash2 size={14}/>Clear all</button></div>
+        {history.length ? history.map((chat)=><div className={`history-row ${current?.id===chat.id?"active":""}`} key={chat.id}><button className="history-item" title={chat.title} aria-current={current?.id===chat.id?"true":undefined} onClick={()=>{setCurrent(chat);setSidebarOpen(false);goTo(`/chat/${chat.id}`)}}><span>{chat.title}</span></button><button className="history-delete" onClick={()=>deleteChat(chat.id)} aria-label={`Delete ${chat.title}`}><X size={15}/></button></div>) : <div className="empty-history"><MessageCircle size={18}/><span>Your saved chats will appear here.</span></div>}
+      </nav>
+      <div className="sidebar-bottom">
+        <div className="profile-row"><span className="profile-avatar">{user.avatar?<img src={user.avatar} alt=""/>:<User size={16}/>}</span><span className="profile-copy"><strong>{user.name}</strong>{user.email&&<small>{user.email}</small>}</span></div>
+        <div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>AI settings</button><button onClick={signOut}><LogOut size={17}/>Sign out</button></div>
+      </div>
     </aside>
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"/>}
     <section className="chat-main">
-      <header className="chat-header"><div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Menu size={20}/></button><div><strong>AI Assistant</strong><span><i/> Online</span></div></div><div className="header-actions"><select className="header-model" value={model} onChange={(event)=>setSettings((value)=>({...value,model:event.target.value as LearnModel}))}>{LEARN_MODELS.map((item)=><option key={item} value={item}>{MODEL_LABELS[item]}</option>)}</select><button className="icon-button" onClick={()=>setSettingsOpen(true)} aria-label="Settings"><SettingsIcon size={18}/></button></div></header>
-      <div className="chat-scroll-wrap"><div className="chat-content" ref={scrollRef} onScroll={onScroll}>{!current?.messages.length?<div className="welcome-state"><div className="ai-badge"><BookOpen size={29}/><span><Star size={12}/></span></div><p className="welcome-kicker">LEARNGPT AI</p><h1>Welcome, {displayName}.</h1><p className="welcome-copy">What can I help you accomplish today?</p><div className="prompt-grid">{promptCards.map((card)=><button key={card.title} onClick={()=>send(card.copy,[])}><span className="prompt-icon">{card.icon}</span><strong>{card.title}</strong><small>{card.copy}</small><ArrowRight size={17} className="prompt-arrow"/></button>)}</div></div>:<div className="conversation">{current.messages.map((message,index)=>message.role==="user"?<div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className="user-message"><div className="user-bubble">{message.images?.length?<div className={`msg-images ${message.images.length===1?"single":""}`}>{message.images.map((src,i)=><button className="msg-image" key={i} onClick={()=>setLightbox(src)} aria-label={`View image ${i+1}`}><img src={src} alt={`Attachment ${i+1}`}/></button>)}</div>:null}{message.content&&<span className="user-text">{message.content}</span>}</div><span className="profile-avatar small">{user.avatar?<img src={user.avatar} alt=""/>:<User size={14}/>}</span></div></div>:<div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className={`ai-message ${message.content.includes("```")?"rich":""}`}><span className="message-ai-icon"><BookOpen size={18}/></span><div><strong>LearnGPT</strong><div className="markdown-content"><MessageContent content={message.content}/></div></div></div></div>)}{loading&&<div className="message-group"><div className="ai-message"><span className="message-ai-icon"><BookOpen size={18}/></span><div><strong>LearnGPT</strong><div className="markdown-content"><p className="thinking-text">Thinking…</p></div></div></div></div>}</div>}{status&&<div className="chat-status">{status}</div>}</div>{showJump&&msgCount>0&&<button className="jump-bottom" onClick={()=>scrollToBottom(true)} aria-label="Scroll to latest message"><ArrowDown size={17}/></button>}</div>
+      <header className="chat-header">
+        <div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Menu size={20}/></button><h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
+        <div className="header-actions"><select className="header-model" aria-label="Model" value={model} onChange={(event)=>setSettings((value)=>({...value,model:event.target.value as LearnModel}))}>{LEARN_MODELS.map((item)=><option key={item} value={item}>{MODEL_LABELS[item]}</option>)}</select><button className="icon-button settings-trigger" onClick={()=>setSettingsOpen(true)} aria-label="Settings"><SettingsIcon size={18}/></button></div>
+      </header>
+      <div className="chat-scroll-wrap">
+        <div className="chat-content" ref={scrollRef} onScroll={onScroll}>
+          {!hasMessages ? <div className="welcome-state">
+            <span className="brand-mark large"><BookOpen size={26}/></span>
+            <h1>Hi, {displayName}.</h1>
+            <p className="welcome-copy">What would you like to learn or get done today?</p>
+            <div className="prompt-grid">{promptCards.map((card)=><button key={card.title} onClick={()=>send(card.copy,[])}><span className="prompt-icon">{card.icon}</span><span className="prompt-text"><strong>{card.title}</strong><small>{card.copy}</small></span><ArrowRight size={18} className="prompt-arrow"/></button>)}</div>
+          </div> : <div className="conversation">
+            {current!.messages.map((message,index)=>message.role==="user"
+              ? <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className="user-message"><div className="user-bubble">{message.images?.length?<div className={`msg-images ${message.images.length===1?"single":""}`}>{message.images.map((src,i)=><button className="msg-image" key={i} onClick={()=>setLightbox(src)} aria-label={`View image ${i+1}`}><img src={src} alt={`Attachment ${i+1}`}/></button>)}</div>:null}{message.content&&<span className="user-text">{message.content}</span>}</div></div></div>
+              : <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className={`ai-message ${message.content.includes("```")?"rich":""}`}><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><MessageContent content={message.content}/></div></div></div></div>)}
+            {loading&&<div className="message-group"><div className="ai-message"><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><p className="thinking-text" role="status">Thinking…</p></div></div></div></div>}
+          </div>}
+        </div>
+        {status&&<div className={`chat-status ${statusGood?"ok":""}`} role="status">{statusGood?<Check size={16}/>:<AlertCircle size={16}/>}<span>{status}</span><button onClick={()=>setStatus("")} aria-label="Dismiss message"><X size={15}/></button></div>}
+        {showJump&&msgCount>0&&<button className="jump-bottom" onClick={()=>scrollToBottom(true)} aria-label="Scroll to latest message"><ArrowDown size={18}/></button>}
+      </div>
       <div className="composer-zone" onDragOver={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(true)}}} onDragLeave={(event)=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDragging(false)}} onDrop={(event)=>{event.preventDefault();setDragging(false);if(event.dataTransfer.files.length)addFiles(event.dataTransfer.files)}}>
         <div className={`composer ${images.length||attaching?"has-images":""} ${dragging?"dragging":""}`}>
-          {(images.length>0||attaching)&&<div className="attachment-tray">{images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={13}/></button></div>)}{attaching&&<div className="attachment attachment-loading" aria-label="Processing image"><i/></div>}</div>}
+          {(images.length>0||attaching)&&<div className="attachment-tray">{images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={14}/></button></div>)}{attaching&&<div className="attachment attachment-loading" aria-label="Processing image"><i/></div>}</div>}
           <div className="composer-row">
-            <button className="attach-button" aria-label="Attach images" title={`Attach images (max ${MAX_IMAGES})`} disabled={attaching||images.length>=MAX_IMAGES} onClick={()=>attachRef.current?.click()}><Paperclip size={19}/></button>
+            <button className="attach-button" aria-label="Attach images" title={`Attach images (max ${MAX_IMAGES})`} disabled={attaching||images.length>=MAX_IMAGES} onClick={()=>attachRef.current?.click()}><Paperclip size={20}/></button>
             <input ref={attachRef} type="file" accept="image/*" multiple hidden onChange={(event)=>{if(event.target.files?.length)addFiles(event.target.files);event.target.value=""}}/>
-            <textarea ref={taRef} rows={1} value={input} onChange={(event)=>setInput(event.target.value)} onPaste={(event)=>{const files=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(files.length){event.preventDefault();addFiles(files)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={images.length?"Add a message about your image(s)…":"Ask anything, start a task, or describe what you're working on…"}/>
+            <textarea ref={taRef} rows={1} aria-label="Message" value={input} onChange={(event)=>setInput(event.target.value)} onPaste={(event)=>{const files=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(files.length){event.preventDefault();addFiles(files)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={images.length?"Add a message about your image(s)…":"Ask anything…"}/>
             <button className="send-button" disabled={(!input.trim()&&!images.length)||loading||attaching} onClick={()=>send()} aria-label="Send message"><Send size={18}/></button>
           </div>
           {dragging&&<div className="drop-hint"><ImageIcon size={20}/>Drop images to attach</div>}
