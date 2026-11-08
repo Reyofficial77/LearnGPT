@@ -28,7 +28,7 @@ export type OllamaMessage = { role: "system" | "user" | "assistant"; content: st
 const REQUEST_TIMEOUT_MS = 270_000;
 
 /** One non-streaming call to Ollama Cloud. The API key is read from env on the server only. */
-export async function ollamaChat(model: string, messages: OllamaMessage[]): Promise<string> {
+export async function ollamaChat(model: string, messages: OllamaMessage[], timeoutMs = REQUEST_TIMEOUT_MS): Promise<string> {
   const apiKey = process.env.OLLAMA_API_KEY?.trim();
   if (!apiKey) throw new OllamaError("The AI service is not configured yet. Please contact the site owner.", 503);
   const baseUrl = (process.env.OLLAMA_BASE_URL?.trim() || "https://ollama.com").replace(/\/+$/, "");
@@ -39,7 +39,7 @@ export async function ollamaChat(model: string, messages: OllamaMessage[]): Prom
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages, stream: false }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) throw new OllamaError("The AI took too long to respond. Please try again.", 504);

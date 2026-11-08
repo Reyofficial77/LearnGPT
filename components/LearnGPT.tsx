@@ -1,14 +1,15 @@
 "use client";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Trash2, User, X, Zap, ChevronDown, FileText } from "react-feather";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, FileText, Image as ImageIcon, List, LogOut, Menu, MessageCircle, Paperclip, Plus, Send, Settings as SettingsIcon, Trash2, User, X, Zap } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import SettingsModal from "./SettingsModal";
-import { DEFAULT_SETTINGS, type ChatMessage, type Settings as AppSettings } from "../lib/types";
+import { DEFAULT_SETTINGS, type ChatAttachment, type ChatMessage, type Settings as AppSettings } from "../lib/types";
 import { LEARN_MODELS, MODEL_LABELS } from "../lib/models";
 import type { LearnModel } from "../lib/types";
 
 type Chat = { id: string; title: string; messages: ChatMessage[]; updatedAt: number };
+type PendingFile = ChatAttachment & { dataUrl: string };
 type PromptCard = { icon: ReactNode; title: string; copy: string };
 
 const promptCards: PromptCard[] = [
@@ -19,7 +20,7 @@ const promptCards: PromptCard[] = [
 
 const CHAT_PATH = /^\/chat\/([A-Za-z0-9-]+)\/?$/;
 // API rows may come without `messages` (e.g. a freshly created chat) -> always normalize.
-function normalizeChat(raw: any): Chat { return { id: raw.id, title: raw.title || "New conversation", messages: Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({ role: m.role, content: m.content, ...(Array.isArray(m.images) && m.images.length ? { images: m.images as string[] } : {}) })) : [], updatedAt: raw.updatedAt ? new Date(raw.updatedAt).getTime() : Date.now() }; }
+function normalizeChat(raw: any): Chat { return { id: raw.id, title: raw.title || "New conversation", messages: Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({ role: m.role, content: m.content, ...(Array.isArray(m.images) && m.images.length ? { images: m.images as string[] } : {}), ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments as ChatAttachment[] } : {}) })) : [], updatedAt: raw.updatedAt ? new Date(raw.updatedAt).getTime() : Date.now() }; }
 
 // Client-side URL change with NO network request and NO reload (like ChatGPT/Claude).
 // Next.js syncs native history.pushState/replaceState with usePathname().
@@ -28,7 +29,15 @@ function goTo(path: string, mode: "push" | "replace" = "push") {
   window.history[mode === "push" ? "pushState" : "replaceState"](null, "", path);
 }
 
+const MODEL_SHORT_LABELS: Record<LearnModel, string> = { "learn-1.0-smart": "Smart", "learn-1.0-study": "Study", "learn-2.0-thinking": "Thinking" };
 const MAX_IMAGES = 4;
+const MAX_FILES = 4;
+const MAX_FILE_BYTES = 1_000_000;
+const MAX_COMBINED_UPLOAD_CHARS = 3_500_000;
+const SUPPORTED_FILE_EXTENSIONS = new Set(["pdf", "docx", "txt", "md", "csv", "json", "html", "htm", "css", "js", "jsx", "ts", "tsx", "py", "java", "c", "cpp", "h", "sql", "sh", "yaml", "yml", "xml", "log", "ini", "toml", "go", "rs", "rb", "php", "cs"]);
+const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt,.md,.csv,.json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.sql,.sh,.yaml,.yml,.xml,.log,.ini,.toml,.go,.rs,.rb,.php,.cs";
+function fileExtension(file: File) { const ext = file.name.split(".").pop()?.toLowerCase() || ""; if (SUPPORTED_FILE_EXTENSIONS.has(ext)) return ext; const byMime: Record<string, string> = { "application/pdf": "pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx", "text/plain": "txt", "text/markdown": "md", "text/csv": "csv", "application/json": "json" }; return byMime[file.type] || ""; }
+function readFileDataUrl(file: File): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read file.")); reader.onerror = () => reject(new Error("Could not read file.")); reader.readAsDataURL(file); }); }
 // Resize + re-encode to JPEG so uploads stay small (Vercel request limit is ~4.5 MB) and every provider accepts them.
 async function fileToJpegDataUrl(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
@@ -47,11 +56,19 @@ async function fileToJpegDataUrl(file: File): Promise<string> {
     throw new Error("unreadable");
   } finally { URL.revokeObjectURL(url); }
 }
-// Only the two most recent messages that carry images are re-sent in full; older ones are flagged so the model knows.
+// Keep the two most recent messages with attachments in the request; older image data is marked as omitted.
 function buildPayload(msgs: ChatMessage[]) {
   const keep = new Set<number>();
-  for (let i = msgs.length - 1; i >= 0 && keep.size < 2; i--) if (msgs[i].images?.length) keep.add(i);
-  return msgs.map((m, i) => ({ role: m.role, content: m.content, images: keep.has(i) ? m.images : undefined, imageCount: m.images?.length || 0 }));
+  for (let i = msgs.length - 1; i >= 0 && keep.size < 2; i--) if (msgs[i].images?.length || msgs[i].attachments?.length) keep.add(i);
+  return msgs.map((message, index) => ({
+    role: message.role,
+    content: message.content,
+    images: keep.has(index) ? message.images : undefined,
+    // Older files no longer need their upload data URL, but their extracted text
+    // stays in context so the assistant can still refer to previously sent files.
+    attachments: message.attachments?.map(({ dataUrl, ...metadata }) => keep.has(index) ? { ...metadata, ...(dataUrl ? { dataUrl } : {}) } : metadata),
+    imageCount: message.images?.length || 0
+  }));
 }
 
 function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved }; }
@@ -76,18 +93,20 @@ export default function LearnGPT() {
   const chatsRef = useRef<Chat[]>([]);
   const busyRef = useRef(false);
   const [images, setImages] = useState<string[]>([]);
+  const [files, setFiles] = useState<PendingFile[]>([]);
   const [attaching, setAttaching] = useState(false);
-  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [documents, setDocuments] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const attachRef = useRef<HTMLInputElement>(null);
-  const documentRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachMenuRef = useRef<HTMLDivElement>(null);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved)); setLoaded(true); })().catch(() => setStatus("Could not load your workspace.")); }, []);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
@@ -116,67 +135,97 @@ export default function LearnGPT() {
   }, [msgCount, lastRole, loading]);
   useEffect(() => { stickRef.current = true; setShowJump(false); requestAnimationFrame(() => scrollToBottom()); }, [current?.id]);
   // Composer textarea grows with its content (up to a cap), then scrolls.
-  useEffect(() => { const el = taRef.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }, [input, images.length]);
+  useEffect(() => { const el = taRef.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }, [input, images.length, files.length]);
   useEffect(() => { if (!lightbox) return; const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setLightbox(null); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [lightbox]);
+  useEffect(() => {
+    if (!attachMenuOpen && !modelMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!attachMenuRef.current?.contains(target)) setAttachMenuOpen(false);
+      if (!modelMenuRef.current?.contains(target)) setModelMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { setAttachMenuOpen(false); setModelMenuOpen(false); } };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("pointerdown", onPointerDown); window.removeEventListener("keydown", onKeyDown); };
+  }, [attachMenuOpen, modelMenuOpen]);
   const history = useMemo(() => chats.filter((chat) => chat.messages.length), [chats]);
   const displayName = user?.name?.split(" ")[0] || "there";
   const model = settings.model;
 
-  const newChat = () => { setCurrent(null); setInput(""); setImages([]); setDocuments([]); setStatus(""); setSidebarOpen(false); if (routeChatId) goTo("/"); };
+  const newChat = () => { setCurrent(null); setInput(""); setImages([]); setFiles([]); setStatus(""); setSidebarOpen(false); if (routeChatId) goTo("/"); };
   const createChat = async (title: string) => { const response = await fetch("/api/chats", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ title }) }); if (!response.ok) throw new Error("Could not create conversation."); const data=await response.json(); const chat=normalizeChat(data.chat); setChats((items)=>[chat,...items]); return chat; };
-  const addFiles = async (files: FileList | File[]) => {
-    const list = Array.from(files).filter((file) => file.type.startsWith("image/"));
-    if (!list.length) { setStatus("Only image files can be attached."); return; }
+  const addImages = async (selected: FileList | File[]) => {
+    const list = Array.from(selected).filter((file) => file.type.startsWith("image/"));
+    if (!list.length) return;
     const room = MAX_IMAGES - images.length;
     if (room <= 0) { setStatus(`You can attach up to ${MAX_IMAGES} images per message.`); return; }
-    setAttaching(true); setStatus("");
+    setAttaching(true); setStatus(""); setAttachMenuOpen(false);
     try {
       const added: string[] = [];
       for (const file of list.slice(0, room)) {
         if (file.size > 20 * 1024 * 1024) { setStatus("An image is larger than 20 MB and was skipped."); continue; }
-        try { added.push(await fileToJpegDataUrl(file)); } catch { setStatus("Could not read one of the images (unsupported format)."); }
+        try {
+          const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
+          const renamed = new File([file], `image-${crypto.randomUUID()}.${ext}`, { type: file.type || "image/jpeg" });
+          added.push(await fileToJpegDataUrl(renamed));
+        } catch { setStatus("Could not read one of the images (unsupported format)."); }
       }
       if (added.length) setImages((prev) => [...prev, ...added].slice(0, MAX_IMAGES));
       if (list.length > room) setStatus(`Max ${MAX_IMAGES} images per message — extra images were skipped.`);
     } finally { setAttaching(false); }
   };
-  const addDocuments = async (files: FileList | File[]) => {
-    const accepted = Array.from(files).filter((file) => /^(text\/|application\/(pdf|json|xml|rtf|msword|vnd\.openxmlformats-officedocument\\.wordprocessingml\\.document))/.test(file.type) || /\\.(txt|md|csv|json|xml|html|css|js|ts|py|pdf|docx)$/i.test(file.name));
-    if (!accepted.length) { setStatus("Choose a supported document or text file."); return; }
-    setAttaching(true); setStatus("");
+  const addDocuments = async (selected: FileList | File[]) => {
+    const list = Array.from(selected);
+    if (!list.length) return;
+    const room = MAX_FILES - files.length;
+    if (room <= 0) { setStatus(`You can attach up to ${MAX_FILES} documents or files per message.`); return; }
+    setAttaching(true); setStatus(""); setAttachMenuOpen(false);
     try {
-      const extracted: string[] = [];
-      for (const file of accepted.slice(0, 5)) {
-        if (file.size > 8 * 1024 * 1024) { setStatus(`${file.name} exceeds the 8 MB limit and was skipped.`); continue; }
-        if (file.type === "application/pdf" || /\\.pdf$/i.test(file.name) || /\\.docx$/i.test(file.name)) {
-          setStatus(`${file.name}: PDF and DOCX uploads are selected, but text extraction for these formats needs a document parser. Upload a TXT/MD version for now.`);
-          continue;
-        }
-        const text = await file.text();
-        extracted.push(`\\n\\n[Document: ${file.name}]\\n${text.slice(0, 100000)}\\n[End document]`);
+      const added: PendingFile[] = [];
+      for (const file of list.slice(0, room)) {
+        const ext = fileExtension(file);
+        if (!ext) { setStatus("Unsupported file type. Choose PDF, DOCX, text, data, or code files."); continue; }
+        if (file.size > MAX_FILE_BYTES) { setStatus("Each document or file must be 1 MB or smaller."); continue; }
+        try {
+          const id = crypto.randomUUID();
+          const mimeType = file.type || (ext === "pdf" ? "application/pdf" : ext === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "text/plain");
+          const renamed = new File([file], `attachment-${id.slice(0, 8)}.${ext}`, { type: mimeType, lastModified: Date.now() });
+          const dataUrl = await readFileDataUrl(renamed);
+          added.push({ id, name: renamed.name, mimeType, size: renamed.size, dataUrl });
+        } catch { setStatus("Could not read one of the selected files."); }
       }
-      if (extracted.length) setDocuments((prev) => [...prev, ...extracted].slice(0, 5));
-    } catch { setStatus("Could not read one of the selected documents."); }
-    finally { setAttaching(false); }
+      if (added.length) setFiles((previous) => [...previous, ...added].slice(0, MAX_FILES));
+      if (list.length > room) setStatus(`Max ${MAX_FILES} documents or files per message — extras were skipped.`);
+    } finally { setAttaching(false); }
   };
-  const send = async (raw = input, attached = images) => {
-    const prompt = (raw.trim() + documents.join("\n")).trim(); if ((!prompt && !attached.length) || loading || attaching) return;
+  const handleFiles = async (selected: FileList | File[]) => {
+    const list = Array.from(selected);
+    const imageFiles = list.filter((file) => file.type.startsWith("image/"));
+    const otherFiles = list.filter((file) => !file.type.startsWith("image/"));
+    if (imageFiles.length) await addImages(imageFiles);
+    if (otherFiles.length) await addDocuments(otherFiles);
+  };
+  const send = async (raw = input, attached = images, attachedFiles = files) => {
+    const prompt = raw.trim(); if ((!prompt && !attached.length && !attachedFiles.length) || loading || attaching) return;
+    const uploadChars = attached.reduce((total, image) => total + image.length, 0) + attachedFiles.reduce((total, file) => total + file.dataUrl.length, 0);
+    if (uploadChars > MAX_COMBINED_UPLOAD_CHARS) { setStatus("Attachments are too large to send together. Remove a file or choose smaller items."); return; }
     setLoading(true); setStatus(""); busyRef.current = true; stickRef.current = true;
     let chat: Chat | null = current;
     try {
-      const title = (prompt || "Image").slice(0, 80);
+      const title = (prompt || (attachedFiles.length ? "Uploaded file" : attached.length ? "Image" : "New conversation")).slice(0, 80);
       if (!chat) chat = await createChat(title);
-      const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}) };
-      const messages = [...chat.messages, userMessage]; const optimistic = { ...chat, title: chat.messages.length ? chat.title : title, messages, updatedAt: Date.now() };
-      setCurrent(optimistic); setInput(""); setImages([]); setDocuments([]); setSidebarOpen(false); if (routeChatId !== chat.id) goTo(`/chat/${chat.id}`);
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, systemPrompt: settings.systemPrompt, messages: buildPayload(messages) }) });
+      const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}), ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
+      const messages = [...chat.messages, userMessage]; const requestMessages = buildPayload(messages); const requestUploadChars = requestMessages.reduce((total, message) => total + (message.images || []).reduce((sum, image) => sum + image.length, 0) + (message.attachments || []).reduce((sum, file) => sum + (file.dataUrl?.length || 0), 0), 0); if (requestUploadChars > MAX_COMBINED_UPLOAD_CHARS) throw new Error("Attachments are too large to send together. Remove a file or choose smaller items."); const optimistic = { ...chat, title: chat.messages.length ? chat.title : title, messages, updatedAt: Date.now() };
+      setCurrent(optimistic); setInput(""); setImages([]); setFiles([]); setSidebarOpen(false); if (routeChatId !== chat.id) goTo(`/chat/${chat.id}`);
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, systemPrompt: settings.systemPrompt, messages: requestMessages }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) { throw new Error(response.status === 413 ? "The images are too large to send. Try fewer or smaller images." : data.error || `Request failed (${response.status})`); }
-      const finalChat = { ...optimistic, messages: [...messages, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)]);
+      if (!response.ok) { throw new Error(response.status === 413 ? "Attachments are too large to send. Try fewer or smaller files." : data.error || `Request failed (${response.status})`); }
+      const savedUserMessage = { ...userMessage, ...(attachedFiles.length ? { attachments: Array.isArray(data.attachments) ? data.attachments as ChatAttachment[] : [] } : {}) }; const finalChat = { ...optimistic, messages: [...chat.messages, savedUserMessage, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)]);
     } catch (error) {
       // Nothing was saved on failure: put the user's message back in the composer instead of making them retype it.
       if (chat) setCurrent(chat);
-      setInput(prompt); setImages(attached);
+      setInput(prompt); setImages(attached); setFiles(attachedFiles);
       setStatus(error instanceof Error ? error.message : "Something went wrong.");
     } finally { busyRef.current = false; setLoading(false); }
   };
@@ -188,6 +237,19 @@ export default function LearnGPT() {
     } catch { return "Could not reach the server. Please try again."; }
     setSettings(next); setSettingsOpen(false); setStatus("Settings saved."); setTimeout(() => setStatus(""), 1800);
     return null;
+  };
+  const changeModel = async (nextModel: LearnModel) => {
+    if (nextModel === settings.model) { setModelMenuOpen(false); return; }
+    const previous = settings;
+    const next = { ...settings, model: nextModel };
+    setSettings(next); setModelMenuOpen(false);
+    try {
+      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: next.model, systemPrompt: next.systemPrompt }) });
+      if (!response.ok) throw new Error("Could not save the selected model.");
+      setStatus(`Model saved: ${MODEL_LABELS[nextModel]}.`); setTimeout(() => setStatus(""), 1800);
+    } catch {
+      setSettings(previous); setStatus("Could not save the selected model. Try again.");
+    }
   };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
   const deleteChat = async (id:string) => { const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){setCurrent(null);goTo("/");}} };
@@ -211,14 +273,13 @@ export default function LearnGPT() {
       </nav>
       <div className="sidebar-bottom">
         <div className="profile-row"><span className="profile-avatar">{user.avatar?<img src={user.avatar} alt=""/>:<User size={16}/>}</span><span className="profile-copy"><strong>{user.name}</strong>{user.email&&<small>{user.email}</small>}</span></div>
-        <div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>Settings</button><button onClick={signOut}><LogOut size={17}/>Sign out</button></div>
+        <div className="sidebar-actions"><button onClick={()=>setSettingsOpen(true)}><SettingsIcon size={17}/>AI settings</button><button onClick={signOut}><LogOut size={17}/>Sign out</button></div>
       </div>
     </aside>
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label="Close menu"/>}
     <section className="chat-main">
       <header className="chat-header">
         <div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen(true)} aria-label="Open menu"><Menu size={20}/></button><h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
-        <div className="header-actions"><span className="header-model-label">{MODEL_LABELS[model]}</span></div>
       </header>
       <div className="chat-scroll-wrap">
         <div className="chat-content" ref={scrollRef} onScroll={onScroll}>
@@ -229,7 +290,7 @@ export default function LearnGPT() {
             <div className="prompt-grid">{promptCards.map((card)=><button key={card.title} onClick={()=>send(card.copy,[])}><span className="prompt-icon">{card.icon}</span><span className="prompt-text"><strong>{card.title}</strong><small>{card.copy}</small></span><ArrowRight size={18} className="prompt-arrow"/></button>)}</div>
           </div> : <div className="conversation">
             {current!.messages.map((message,index)=>message.role==="user"
-              ? <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className="user-message"><div className="user-bubble">{message.images?.length?<div className={`msg-images ${message.images.length===1?"single":""}`}>{message.images.map((src,i)=><button className="msg-image" key={i} onClick={()=>setLightbox(src)} aria-label={`View image ${i+1}`}><img src={src} alt={`Attachment ${i+1}`}/></button>)}</div>:null}{message.content&&<span className="user-text">{message.content}</span>}</div></div></div>
+              ? <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className="user-message"><div className="user-bubble">{message.images?.length?<div className={`msg-images ${message.images.length===1?"single":""}`}>{message.images.map((src,i)=><button className="msg-image" key={i} onClick={()=>setLightbox(src)} aria-label={`View image ${i+1}`}><img src={src} alt={`Attachment ${i+1}`}/></button>)}</div>:null}{message.attachments?.length?<div className="message-files">{message.attachments.map((file)=><div className="message-file" key={file.id}><FileText size={15}/><span>{file.name}</span></div>)}</div>:null}{message.content&&<span className="user-text">{message.content}</span>}</div></div></div>
               : <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className={`ai-message ${message.content.includes("```")?"rich":""}`}><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><MessageContent content={message.content}/></div></div></div></div>)}
             {loading&&<div className="message-group"><div className="ai-message"><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><p className="thinking-text" role="status">Thinking…</p></div></div></div></div>}
           </div>}
@@ -237,23 +298,33 @@ export default function LearnGPT() {
         {status&&<div className={`chat-status ${statusGood?"ok":""}`} role="status">{statusGood?<Check size={16}/>:<AlertCircle size={16}/>}<span>{status}</span><button onClick={()=>setStatus("")} aria-label="Dismiss message"><X size={15}/></button></div>}
         {showJump&&msgCount>0&&<button className="jump-bottom" onClick={()=>scrollToBottom(true)} aria-label="Scroll to latest message"><ArrowDown size={18}/></button>}
       </div>
-      <div className="composer-zone" onDragOver={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(true)}}} onDragLeave={(event)=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDragging(false)}} onDrop={(event)=>{event.preventDefault();setDragging(false);if(event.dataTransfer.files.length)addFiles(event.dataTransfer.files)}}>
-        <div className={`composer ${images.length||attaching?"has-images":""} ${dragging?"dragging":""}`}>
-          {(images.length>0||documents.length>0||attaching)&&<div className="attachment-tray">{images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={14}/></button></div>)}{documents.map((doc,index)=><div className="document-attachment" key={index}><FileText size={17}/><span>Document {index+1}</span><button onClick={()=>setDocuments((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove document ${index+1}`}><X size={13}/></button></div>)}{attaching&&<div className="attachment attachment-loading" aria-label="Processing upload"><i/></div>}</div>}
+      <div className="composer-zone" onDragOver={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(true)}}} onDragLeave={(event)=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDragging(false)}} onDrop={(event)=>{event.preventDefault();setDragging(false);if(event.dataTransfer.files.length)void handleFiles(event.dataTransfer.files)}}>
+        <div className={`composer ${images.length||files.length||attaching?"has-images":""} ${dragging?"dragging":""}`}>
+          {(images.length>0||files.length>0||attaching)&&<div className="attachment-tray">
+            {images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Image attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={14}/></button></div>)}
+            {files.map((file)=><div className="attachment-file" key={file.id}><FileText size={19}/><span title={file.name}>{file.name}</span><button className="attachment-remove" onClick={()=>setFiles((items)=>items.filter((item)=>item.id!==file.id))} aria-label={`Remove ${file.name}`}><X size={14}/></button></div>)}
+            {attaching&&<div className="attachment attachment-loading" aria-label="Processing attachment"><i/></div>}
+          </div>}
           <div className="composer-row">
-            <div className="upload-picker">
-              <button className="attach-button" aria-label="Upload files or images" title="Upload files or images" disabled={attaching} onClick={()=>setUploadMenuOpen((open)=>!open)}><Paperclip size={20}/></button>
-              {uploadMenuOpen&&<div className="upload-menu" role="menu">
-                <button role="menuitem" onClick={()=>{setUploadMenuOpen(false);documentRef.current?.click()}}><FileText size={17}/><span><strong>Documents & files</strong><small>TXT, MD, CSV, code files</small></span></button>
-                <button role="menuitem" onClick={()=>{setUploadMenuOpen(false);attachRef.current?.click()}}><ImageIcon size={17}/><span><strong>Images</strong><small>PNG, JPG, WEBP and more</small></span></button>
+            <div className="attach-menu-wrap" ref={attachMenuRef}>
+              <button className="attach-button" aria-label="Attach files" title="Attach files or images" disabled={attaching||files.length>=MAX_FILES&&images.length>=MAX_IMAGES} aria-expanded={attachMenuOpen} onClick={()=>setAttachMenuOpen((open)=>!open)}><Plus size={21}/></button>
+              {attachMenuOpen&&<div className="composer-menu attach-menu" role="menu">
+                <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);fileInputRef.current?.click()}}><FileText size={17}/><span><strong>Documents & files</strong><small>PDF, DOCX, text, data, code</small></span></button>
+                <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);imageInputRef.current?.click()}}><ImageIcon size={17}/><span><strong>Images</strong><small>PNG, JPG, WEBP, GIF</small></span></button>
               </div>}
             </div>
-            <input ref={attachRef} type="file" accept="image/*" multiple hidden onChange={(event)=>{if(event.target.files?.length)addFiles(event.target.files);event.target.value=""}}/>
-            <input ref={documentRef} type="file" accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.pdf,.docx" multiple hidden onChange={(event)=>{if(event.target.files?.length)addDocuments(event.target.files);event.target.value=""}}/>
-            <textarea ref={taRef} rows={1} aria-label="Message" value={input} onChange={(event)=>setInput(event.target.value)} onPaste={(event)=>{const files=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(files.length){event.preventDefault();addFiles(files)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={images.length?"Add a message about your image(s)…":"Ask anything…"}/>
-            <button className="send-button" disabled={(!input.trim()&&!images.length)||loading||attaching} onClick={()=>send()} aria-label="Send message"><Send size={18}/></button>
+            <input ref={fileInputRef} type="file" accept={ACCEPTED_FILE_TYPES} multiple hidden onChange={(event)=>{if(event.target.files?.length)addDocuments(event.target.files);event.target.value=""}}/>
+            <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(event)=>{if(event.target.files?.length)addImages(event.target.files);event.target.value=""}}/>
+            <textarea ref={taRef} rows={1} aria-label="Message" value={input} onChange={(event)=>setInput(event.target.value)} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={images.length||files.length?"Add a message about your attachments…":"Ask anything…"}/>
+            <div className="model-picker-wrap" ref={modelMenuRef}>
+              <button className="model-picker-trigger" aria-label={`Choose model, current model ${MODEL_LABELS[model]}`} aria-haspopup="listbox" aria-expanded={modelMenuOpen} onClick={()=>setModelMenuOpen((open)=>!open)}><span>{MODEL_SHORT_LABELS[model]}</span><ChevronDown size={15}/></button>
+              {modelMenuOpen&&<div className="composer-menu model-menu" role="listbox" aria-label="Choose a LearnGPT model">
+                {LEARN_MODELS.map((item)=><button className="model-option" key={item} role="option" aria-selected={model===item} onClick={()=>changeModel(item)}><span><strong>{MODEL_LABELS[item]}</strong><small>{item==="learn-1.0-smart"?"For everyday questions":item==="learn-1.0-study"?"For guided explanations and practice":"For complex questions and reasoning"}</small></span>{model===item&&<Check size={16}/>}</button>)}
+              </div>}
+            </div>
+            <button className="send-button" disabled={(!input.trim()&&!images.length&&!files.length)||loading||attaching} onClick={()=>send()} aria-label="Send message"><Send size={18}/></button>
           </div>
-          {dragging&&<div className="drop-hint"><ImageIcon size={20}/>Drop images to attach</div>}
+          {dragging&&<div className="drop-hint"><Paperclip size={20}/>Drop files or images to attach</div>}
         </div>
         <p>Your chats are saved to your LearnGPT account. LearnGPT can make mistakes.</p>
       </div>
