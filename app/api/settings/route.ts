@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma";
 import { getSessionUser } from "../../../lib/server-auth";
 import { DEFAULT_SETTINGS } from "../../../lib/types";
@@ -33,7 +34,9 @@ export async function PUT(req: NextRequest) {
   const provider = "ollama";
   const model = LEARN_MODELS.includes(body.model) ? String(body.model) : DEFAULT_SETTINGS.model;
   const theme = THEMES.includes(body.theme) ? body.theme : DEFAULT_SETTINGS.theme;
-  const enabledSkills = Array.isArray(body.enabledSkills) ? [...new Set(body.enabledSkills.filter((item: unknown): item is string => typeof item === "string" && AVAILABLE_SKILLS.has(item)))] : DEFAULT_SETTINGS.enabledSkills;
+  const enabledSkills: Prisma.InputJsonValue = Array.isArray(body.enabledSkills)
+    ? [...new Set<string>(body.enabledSkills.filter((item: unknown): item is string => typeof item === "string" && AVAILABLE_SKILLS.has(item)))]
+    : [...DEFAULT_SETTINGS.enabledSkills];
   const webSearchEnabled = typeof body.webSearchEnabled === "boolean" ? body.webSearchEnabled : DEFAULT_SETTINGS.webSearchEnabled;
   const dictationLanguage = DICTATION_LANGUAGES.has(body.dictationLanguage) ? body.dictationLanguage : DEFAULT_SETTINGS.dictationLanguage;
   const settings = await prisma.userSettings.upsert({
