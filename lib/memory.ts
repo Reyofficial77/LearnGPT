@@ -3,27 +3,20 @@ import { join } from "node:path";
 import { prisma } from "./prisma";
 
 const GLOBAL_MEMORY_ID = "global";
-const DEFAULT_USER_MEMORY = "# User memory\n\nNo stable user details have been saved yet.\n";
+const DEFAULT_USER_MEMORY = "# User memory\n\nNo durable user details have been saved yet.\n";
 
-async function readProjectMemory(fileName: "MEMORY.md" | "USER.md"): Promise<string> {
-  try {
-    // Static paths let Next.js trace only these two files, not the whole project.
-    if (fileName === "MEMORY.md") return await readFile(join(process.cwd(), "MEMORY.md"), "utf8");
-    return await readFile(join(process.cwd(), "USER.md"), "utf8");
-  } catch {
-    return fileName === "MEMORY.md"
-      ? "You are LearnGPT, a patient learning assistant. Use the user's language and teach clearly."
-      : DEFAULT_USER_MEMORY;
-  }
+async function readGlobalMemory(): Promise<string> {
+  try { return await readFile(join(process.cwd(), "MEMORY.md"), "utf8"); }
+  catch { return "You are LearnGPT. Reply in the user's language, explain clearly, adapt to their level, and be transparent about uncertainty."; }
 }
 
 export async function loadMemoryContext(userId: string) {
-  const [globalSeed, userTemplate] = await Promise.all([readProjectMemory("MEMORY.md"), readProjectMemory("USER.md")]);
+  const globalSeed = await readGlobalMemory();
   const [global, user] = await Promise.all([
     prisma.globalMemory.upsert({ where: { id: GLOBAL_MEMORY_ID }, update: {}, create: { id: GLOBAL_MEMORY_ID, content: globalSeed } }),
     prisma.userMemory.findUnique({ where: { userId } })
   ]);
-  return { global: global.content, userTemplate, user: user?.content || DEFAULT_USER_MEMORY };
+  return { global: global.content, user: user?.content || DEFAULT_USER_MEMORY };
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
@@ -41,7 +34,7 @@ function looksSensitive(value: string) {
   return /\b(password|passphrase|api[_ -]?key|access token|refresh token|secret key|rekening|nomor kartu|credit card|bank account|passport|national id|social security|diagnosis|disease|medical|health|pregnan|disability|obat|penyakit|agama|religion|partai politik|political party|orientasi seksual|sexual orientation|race|ethnicity|ras|etnis|home address|street address|alamat rumah|precise location|gps coordinates)\b/i.test(value);
 }
 
-/** Capture durable user-shared facts; personal notes are always account-scoped. */
+/** Store private memory in the authenticated user's database record, never in a shared project file. */
 export async function updateMemoryFromConversation(args: {
   userId: string;
   model: string;
@@ -55,7 +48,7 @@ export async function updateMemoryFromConversation(args: {
 
   const current = await loadMemoryContext(args.userId);
   const transcript = args.messages.slice(-8).map((message) => `${message.role}: ${message.content.slice(0, 2500)}`).join("\n\n");
-  const prompt = `Review this recent conversation and return strict JSON only: {"userMemory": string|null, "globalMemory": string|null}.\n\nExisting USER.md:\n${current.user}\n\nExisting global MEMORY.md:\n${current.global}\n\nRecent conversation:\n${transcript}\n\nRules:\n- USER.md is only about the signed-in person, not LordRey or the product developer. Update it only with durable facts/preferences explicitly stated by that person. Preserve useful existing details and remove corrected outdated details. If there is no durable user information to add, return null for userMemory. Never store credentials, sensitive personal data, precise location, or guesses.\n- MEMORY.md is shared across every account. Update it only if the user's latest message explicitly asks for a rule to apply to all LearnGPT users. Never include any individual user's identity, preferences, projects, chat details, or private information. Preserve existing global instructions. If no explicit shared rule is requested, return null for globalMemory.\n- Return each non-null field as the complete updated Markdown document, not a fragment. Keep each document under 6,000 characters.`;
+  const prompt = `Review this recent conversation and return strict JSON only: {"userMemory": string|null, "globalMemory": string|null}.\n\nPrivate user memory (logical path: user/${args.userId}/USER.md):\n${current.user}\n\nGlobal memory (MEMORY.md):\n${current.global}\n\nRecent conversation:\n${transcript}\n\nRules:\n- User memory belongs only to the signed-in account represented by userId ${args.userId}. Update it only with durable facts/preferences explicitly stated by that person. Preserve useful details and remove corrected outdated details. Return null when there is nothing durable to add. Never store credentials, sensitive personal data, precise location, or guesses.\n- Global memory is shared across every account. Update it only if the user's latest message explicitly asks for a rule to apply to all LearnGPT users. Never include an individual user's identity, preferences, projects, chat details, or private information. Return null without an explicit shared rule.\n- Return each non-null field as the complete updated Markdown document, not a fragment. Keep each document under 6,000 characters.`;
 
   try {
     const raw = await args.ollamaChat(args.model, [

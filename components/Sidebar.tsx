@@ -1,6 +1,6 @@
 "use client";
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronDown, ChevronUp, Edit3, Folder, Globe, HelpCircle, Lock, LogOut, MoreHorizontal, Bookmark, Plus, Share2, Settings as SettingsIcon, Trash2, User, X } from "react-feather";
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Edit3, Folder, Globe, HelpCircle, Lock, LogOut, MoreHorizontal, Bookmark, MessageSquare, Plus, Search, Share2, Settings as SettingsIcon, Trash2, User, X } from "react-feather";
 import type { Chat, ProjectSummary } from "../lib/types";
 import { type Dict } from "../lib/i18n";
 
@@ -11,7 +11,7 @@ export function Brand({ compact = false, onNavigate }: { compact?: boolean; onNa
 type Props = {
   t: Dict; open: boolean; user: { name: string; email?: string; avatar?: string };
   projects: ProjectSummary[]; chats: Chat[]; currentChatId: string | null; activeProjectId: string | null; titlingChatId: string | null;
-  onClose: () => void; onNewChat: () => void; onCreateProject: () => void;
+  onClose: () => void; onToggleSidebar: () => void; onNewChat: () => void; onCreateProject: () => void;
   onOpenProject: (project: ProjectSummary) => void; onDeleteProject: (project: ProjectSummary) => void;
   onOpenChat: (chat: Chat) => void; onDeleteChat: (id: string) => void; onRenameChat: (chat: Chat) => void;
   onPinChat: (chat: Chat) => void; onShareChat: (chat: Chat) => void;
@@ -32,6 +32,7 @@ function ChatRow({ chat, active, titling, t, onOpen, onDelete, onRename, onPin, 
   const action = (callback: () => void) => () => { setMenuOpen(false); callback(); };
   return <div className={`side-row chat-side-row ${active ? "active" : ""}`}>
     <button className="row-main" title={chat.title} aria-current={active ? "page" : undefined} onClick={onOpen}>
+      <MessageSquare size={15} className="row-icon chat-row-icon" />
       {chat.pinned && <Bookmark size={13} className="pinned-marker" aria-label={t.pinChat} />}
       <span className={`row-label ${titling ? "is-titling" : ""}`}>{chat.title}</span>
     </button>
@@ -52,10 +53,14 @@ export default function Sidebar(props: Props) {
   const { t, user, projects, chats, currentChatId, activeProjectId, titlingChatId } = props;
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const accountRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const visibleChats = chats.filter((chat) => chat.messages.length);
-  const plainChats = visibleChats.filter((chat) => !chat.projectId);
+  const query = search.trim().toLocaleLowerCase();
+  const matchesChat = (chat: Chat) => !query || chat.title.toLocaleLowerCase().includes(query) || chat.id.toLocaleLowerCase().includes(query);
+  const plainChats = visibleChats.filter((chat) => !chat.projectId && matchesChat(chat));
+  const visibleProjects = projects.filter((project) => !query || project.name.toLocaleLowerCase().includes(query) || visibleChats.some((chat) => chat.projectId === project.id && matchesChat(chat)));
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -84,30 +89,31 @@ export default function Sidebar(props: Props) {
     onOpen={() => props.onOpenChat(chat)} onDelete={() => props.onDeleteChat(chat.id)} onRename={() => props.onRenameChat(chat)}
     onPin={() => props.onPinChat(chat)} onShare={() => props.onShareChat(chat)} />;
 
-  return <aside className={`sidebar ${props.open ? "sidebar-open" : ""}`} aria-label={t.sidebarLabel}>
-    <div className="sidebar-top"><Brand compact onNavigate={props.onNewChat} /><button className="icon-button close-sidebar" onClick={props.onClose} aria-label={t.closeMenu}><X size={20} /></button></div>
-    <button className="new-chat" onClick={props.onNewChat}><Plus size={18} />{t.newChat}</button>
+  return <aside className={`sidebar ${props.open ? "sidebar-open" : "sidebar-collapsed"}`} aria-label={t.sidebarLabel}>
+    <div className="sidebar-top"><Brand compact onNavigate={props.onNewChat} /><div className="sidebar-top-actions"><button className="icon-button sidebar-collapse-trigger" onClick={props.onToggleSidebar} aria-label={t.toggleSidebar} title={t.toggleSidebar}>{props.open ? <ChevronLeft size={19}/> : <ChevronRight size={19}/>}</button><button className="icon-button close-sidebar" onClick={props.onClose} aria-label={t.closeMenu}><X size={20} /></button></div></div>
+    <button className="new-chat" onClick={props.onNewChat} title={t.newChat}><Plus size={18} /><span>{t.newChat}</span></button>
     <div className="sidebar-scroll">
+      <label className="sidebar-search"><Search size={16}/><input value={search} onChange={(event) => setSearch(event.target.value)} aria-label={t.searchChats} placeholder={t.searchPlaceholder}/>{search && <button type="button" onClick={() => setSearch("")} aria-label={t.close}><X size={14}/></button>}</label>
       <section className="side-section" aria-labelledby="side-workspace">
         <div className="side-head"><p className="nav-label" id="side-workspace">{t.workspace}</p></div>
         <button className="side-add" onClick={props.onCreateProject} aria-haspopup="dialog"><Folder size={17} className="row-icon" /><span className="row-label">{t.project}</span><Plus size={15} className="add-plus" /></button>
-        {projects.map((project) => {
+        {visibleProjects.map((project) => {
           const isOpen = expanded.has(project.id);
           const pageActive = activeProjectId === project.id && !currentChatId;
-          const projectChats = visibleChats.filter((chat) => chat.projectId === project.id);
+          const projectChats = visibleChats.filter((chat) => chat.projectId === project.id && matchesChat(chat));
           return <div className="project" key={project.id}>
             <div className={`side-row ${pageActive ? "active" : ""}`}>
               <button className="row-main" title={project.goal} aria-current={pageActive ? "page" : undefined} onClick={() => props.onOpenProject(project)}><Folder size={17} className="row-icon" /><span className="row-label">{project.name}</span></button>
               <button className="row-action danger" onClick={() => props.onDeleteProject(project)} aria-label={`${t.deleteProject}: ${project.name}`}><Trash2 size={14} /></button>
               <button className="row-action chevron" onClick={() => toggle(project.id)} aria-expanded={isOpen} aria-label={`${t.toggleProject}: ${project.name}`}><ChevronDown size={16} className={isOpen ? "" : "collapsed"} /></button>
             </div>
-            {isOpen && <div className="project-chats">{projectChats.length ? projectChats.map(renderChat) : <p className="project-empty">{t.noProjectChats}</p>}</div>}
+            {isOpen && <div className="project-chats">{projectChats.length ? projectChats.map(renderChat) : <p className="project-empty">{query ? t.noSearchResults : t.noProjectChats}</p>}</div>}
           </div>;
         })}
       </section>
       <section className="side-section" aria-labelledby="side-chat">
         <div className="side-head"><p className="nav-label" id="side-chat">{t.chat}</p><button className="history-clear" onClick={props.onClearChats} disabled={!plainChats.length}><Trash2 size={14} />{t.clearAll}</button></div>
-        {plainChats.length ? plainChats.map(renderChat) : <div className="empty-history"><BookOpen size={18} /><span>{t.noChats}</span></div>}
+        {plainChats.length ? plainChats.map(renderChat) : <div className="empty-history"><BookOpen size={18} /><span>{query ? t.noSearchResults : t.noChats}</span></div>}
       </section>
     </div>
     <div className="sidebar-account" ref={accountRef}>

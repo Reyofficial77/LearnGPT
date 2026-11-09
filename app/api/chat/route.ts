@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ollamaChat, resolveModel, type OllamaMessage } from "../../../lib/ollama";
 import { prisma } from "../../../lib/prisma";
 import { getSessionUser } from "../../../lib/server-auth";
@@ -8,6 +10,7 @@ import { describeAiError } from "../../../lib/ai-errors";
 import { extractAttachment, textFromAttachment, type ExtractedAttachment } from "../../../lib/file-extract";
 import { loadMemoryContext, updateMemoryFromConversation } from "../../../lib/memory";
 import { generateChatTitle, fallbackTitle } from "../../../lib/chat-title";
+import { formatSearchContext, needsWebSearch, webSearch } from "../../../lib/web-search";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -103,7 +106,6 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
     const body = await request.json();
     const learnModel = String(body.model || "");
-    const customInstructions = String(body.systemPrompt || "");
     const messages = cleanMessages(body.messages);
     const uploadChars = messages.reduce((total, message) => total + message.images.reduce((sum, image) => sum + image.url.length, 0) + message.attachments.reduce((sum, attachment) => sum + Math.ceil(attachment.size * 1.4), 0), 0);
     if (uploadChars > 3_900_000) return NextResponse.json({ error: "Attachments are too large to send together. Remove a file or choose smaller items." }, { status: 413 });
@@ -112,7 +114,23 @@ export async function POST(request: NextRequest) {
     const model = resolveModel(learnModel);
     if (!model) return NextResponse.json({ error: "Invalid LearnGPT model." }, { status: 400 });
 
-    const memory = await loadMemoryContext(user.id);
+    const [memory, savedSettings] = await Promise.all([
+      loadMemoryContext(user.id),
+      prisma.userSettings.findUnique({ where: { userId: user.id } })
+    ]);
+    const enabledSkills = Array.isArray(savedSettings?.enabledSkills)
+      ? savedSettings.enabledSkills.filter((skill): skill is string => typeof skill === "string")
+      : [];
+    const skillDocuments = await Promise.all(enabledSkills.filter((skill) => skill === "frontend-design").map(async (skill) => {
+      try { return `## Enabled skill: ${skill}\n${await readFile(join(process.cwd(), "skills", skill, "SKILL.md"), "utf8")}`; }
+      catch { return ""; }
+    }));
+    const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content || "";
+    let searchResults: Awaited<ReturnType<typeof webSearch>> = [];
+    if ((savedSettings?.webSearchEnabled || body.webSearch === true) && (body.webSearch === true || needsWebSearch(latestPrompt))) {
+      try { searchResults = await webSearch(latestPrompt); } catch { /* Search is optional; do not fail the chat when a provider is unavailable. */ }
+    }
+    const searchContext = formatSearchContext(searchResults);
     // Chats inside a project get the project's name and goal as context.
     const chatRecord = chatId ? await prisma.chat.findFirst({ where: { id: chatId, userId: user.id }, include: { project: true } }) : null;
     const projectContext = chatRecord?.project
@@ -120,10 +138,10 @@ export async function POST(request: NextRequest) {
       : "";
     const systemPrompt = [
       APP_CAPABILITIES,
-      customInstructions,
+      ...skillDocuments,
+      searchContext,
       projectContext,
-      memory.userTemplate,
-      "## Private memory for this signed-in user (USER.md)",
+      "## Private memory for this signed-in user (account-scoped memory)",
       memory.user,
       "## Global LearnGPT memory (MEMORY.md)",
       memory.global
@@ -153,7 +171,7 @@ export async function POST(request: NextRequest) {
     });
 
     const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-    return NextResponse.json({ text, ...(title ? { title } : {}), attachments: latestUserMessage?.attachments || [] });
+    return NextResponse.json({ text, ...(title ? { title } : {}), attachments: latestUserMessage?.attachments || [], ...(searchResults.length ? { sources: searchResults } : {}) });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Unsupported file type")) return NextResponse.json({ error: error.message }, { status: 415 });
     if (error instanceof Error && error.message.includes("must be 1 MB")) return NextResponse.json({ error: error.message }, { status: 413 });

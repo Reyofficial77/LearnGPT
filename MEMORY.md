@@ -18,5 +18,5 @@ LearnGPT is built by LordRey. Official creator links: Instagram and TikTok `@lor
 
 - This file is shared global knowledge: product identity, stable assistant behavior, and learning principles that apply to every account.
 - Never put an individual user's name, preferences, projects, personal details, chat content, or private data in this shared memory.
-- User-specific knowledge belongs only in that account's `USER.md` memory record.
+- User-specific knowledge belongs only in that account's private `user/{account-id}/USER.md` and `user/{account-id}/MEMORY.md` memory records (stored in account-scoped PostgreSQL at runtime).
 - A global update is permitted only when a user explicitly asks for a rule to apply to all LearnGPT users. Do not infer global rules from an individual preference.

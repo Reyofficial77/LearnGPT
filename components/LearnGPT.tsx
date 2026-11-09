@@ -1,13 +1,14 @@
 "use client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronUp, FileText, Folder, Image as ImageIcon, List, Menu, Mic, Paperclip, Plus, Send, X, Zap } from "react-feather";
+import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronUp, Camera, FileText, Folder, Image as ImageIcon, List, Menu, Mic, Paperclip, Plus, Send, X, Zap, Globe } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
+import CameraCapture from "./CameraCapture";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import { DeleteProjectModal, HelpModal, LanguageModal, ProjectModal } from "./SidebarDialogs";
 import { DEFAULT_SETTINGS, type Chat, type ChatAttachment, type ChatMessage, type ProjectSummary, type Settings as AppSettings } from "../lib/types";
-import { DEFAULT_LANG, LANG_STORAGE_KEY, getDict, type Lang } from "../lib/i18n";
+import { DEFAULT_LANG, LANG_STORAGE_KEY, SUPPORTED_LANGUAGES, getDict, type Lang } from "../lib/i18n";
 import { isReservedSlug } from "../lib/slug";
 import { LEARN_MODELS, MODEL_LABELS } from "../lib/models";
 import type { LearnModel } from "../lib/types";
@@ -106,6 +107,8 @@ export default function LearnGPT() {
   const [languageOpen, setLanguageOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [webSearchOnce, setWebSearchOnce] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<ProjectSummary | null>(null);
   const pathname = usePathname();
   const route = parseRoute(pathname || "/");
@@ -157,7 +160,7 @@ export default function LearnGPT() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LANG_STORAGE_KEY);
-      const initialLang: Lang = saved === "id" || saved === "en" ? saved : DEFAULT_LANG;
+      const initialLang: Lang = SUPPORTED_LANGUAGES.some(([code]) => code === saved) ? saved as Lang : DEFAULT_LANG;
       if (initialLang !== DEFAULT_LANG) setLang(initialLang);
       document.documentElement.lang = initialLang;
       setGreetingIndex(randomGreetingIndex(initialLang));
@@ -266,6 +269,7 @@ export default function LearnGPT() {
     if (otherFiles.length) await addDocuments(otherFiles);
   };
   const send = async (raw = input, attached = images, attachedFiles = files) => {
+    const forceWebSearch = webSearchOnce;
     const prompt = raw.trim(); if ((!prompt && !attached.length && !attachedFiles.length) || loading || attaching) return;
     const uploadChars = attached.reduce((total, image) => total + image.length, 0) + attachedFiles.reduce((total, file) => total + file.dataUrl.length, 0);
     if (uploadChars > MAX_COMBINED_UPLOAD_CHARS) { setStatus(getDict(lang).attachmentsTooLarge); return; }
@@ -278,9 +282,10 @@ export default function LearnGPT() {
       const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}), ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
       const messages = [...chat.messages, userMessage]; const requestMessages = buildPayload(messages); const requestUploadChars = requestMessages.reduce((total, message) => total + (message.images || []).reduce((sum, image) => sum + image.length, 0) + (message.attachments || []).reduce((sum, file) => sum + ("dataUrl" in file && typeof file.dataUrl === "string" ? file.dataUrl.length : 0), 0), 0); if (requestUploadChars > MAX_COMBINED_UPLOAD_CHARS) throw new Error(getDict(lang).attachmentsTooLarge); const optimistic = { ...chat, title: chat.messages.length ? chat.title : NEW_CHAT_TITLE, messages, updatedAt: Date.now() };
       setCurrent(optimistic); setChats((items) => [optimistic, ...items.filter((item) => item.id !== optimistic.id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)); setInput(""); setImages([]); setFiles([]); closeSidebarOnMobile(); goTo(chatPath(chat, projectsRef.current));
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, systemPrompt: settings.systemPrompt, messages: requestMessages }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, messages: requestMessages, webSearch: forceWebSearch }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { throw new Error(response.status === 413 ? getDict(lang).attachmentsTooLargeRetry : data.error || `${lang === "id" ? "Permintaan gagal" : "Request failed"} (${response.status})`); }
+      setWebSearchOnce(false);
       const savedUserMessage = { ...userMessage, ...(attachedFiles.length ? { attachments: Array.isArray(data.attachments) ? data.attachments as ChatAttachment[] : [] } : {}) }; const finalChat = { ...optimistic, title: chat.messages.length ? chat.title : (typeof data.title === "string" && data.title.trim() ? data.title.trim().slice(0, 80) : draftTitle), messages: [...chat.messages, savedUserMessage, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt));
     } catch (error) {
       // Nothing was saved on failure: put the user's message back in the composer instead of making them retype it.
@@ -292,7 +297,7 @@ export default function LearnGPT() {
   // Server stores model/instructions. The AI API key is configured on the server only.
   const saveSettings = async (next: AppSettings): Promise<string | null> => {
     try {
-      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: next.model, systemPrompt: next.systemPrompt, theme: next.theme }) });
+      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
       if (!response.ok) return getDict(lang).settingsError;
     } catch { return getDict(lang).serverUnavailable; }
     setSettings(next); setSettingsOpen(false); setStatus(getDict(lang).settingsSaved); setTimeout(() => setStatus(""), 1800);
@@ -304,7 +309,7 @@ export default function LearnGPT() {
     const next = { ...settings, model: nextModel };
     setSettings(next); setModelMenuOpen(false);
     try {
-      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: next.model, systemPrompt: next.systemPrompt, theme: next.theme }) });
+      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
       if (!response.ok) throw new Error(getDict(lang).modelSaveFailed);
       setStatus(getDict(lang).modelSaved(MODEL_LABELS[nextModel])); setTimeout(() => setStatus(""), 1800);
     } catch {
@@ -318,8 +323,9 @@ export default function LearnGPT() {
     const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Recognition) { setStatus(getDict(lang).dictationNotSupported); return; }
     const recognition = new Recognition();
-    const selectedLang = (() => { try { return localStorage.getItem(LANG_STORAGE_KEY) === "id" ? "id" : lang; } catch { return lang; } })();
-    recognition.lang = selectedLang === "id" ? "id-ID" : "en-US";
+    const browserLanguage = (navigator.language || "id-ID").toLowerCase();
+    const automaticLanguage = browserLanguage === "id" ? "id-ID" : browserLanguage === "en" ? "en-US" : navigator.language || "id-ID";
+    recognition.lang = settings.dictationLanguage === "auto" ? automaticLanguage : settings.dictationLanguage;
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -425,7 +431,7 @@ export default function LearnGPT() {
   if (!user) return <main className="chat-shell"><div className="loading-screen" role="status"><span className="brand-mark large"><BookOpen size={26}/></span><strong>{labels.loadingWorkspace}</strong></div></main>;
   return <main className="chat-shell">
     <Sidebar t={labels} open={sidebarOpen} user={user} projects={projects} chats={chats} currentChatId={current?.id ?? null} activeProjectId={activeProjectId} titlingChatId={titlingChatId}
-      onClose={()=>setSidebarOpen(false)} onNewChat={newChat} onCreateProject={()=>{closeSidebarOnMobile();setProjectModalOpen(true)}} onOpenProject={openProject} onDeleteProject={setProjectToDelete}
+      onClose={()=>setSidebarOpen(false)} onToggleSidebar={()=>setSidebarOpen((open)=>!open)} onNewChat={newChat} onCreateProject={()=>{closeSidebarOnMobile();setProjectModalOpen(true)}} onOpenProject={openProject} onDeleteProject={setProjectToDelete}
       onOpenChat={openChat} onDeleteChat={deleteChat} onRenameChat={renameChat} onPinChat={togglePinChat} onShareChat={shareChat} onClearChats={clearHistory}
       onOpenSettings={()=>{closeSidebarOnMobile();setSettingsOpen(true)}} onOpenLanguage={()=>{closeSidebarOnMobile();setLanguageOpen(true)}} onOpenHelp={()=>{closeSidebarOnMobile();setHelpOpen(true)}} onSignOut={signOut}/>
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label={labels.closeMenu}/> }
@@ -469,6 +475,9 @@ export default function LearnGPT() {
               {attachMenuOpen&&<div className="composer-menu attach-menu" role="menu">
                 <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);fileInputRef.current?.click()}}><FileText size={17}/><span><strong>{labels.documents}</strong><small>{labels.documentsHint}</small></span></button>
                 <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);imageInputRef.current?.click()}}><ImageIcon size={17}/><span><strong>{labels.images}</strong><small>{labels.imagesHint}</small></span></button>
+                <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);setCameraOpen(true)}}><Camera size={17}/><span><strong>{labels.camera}</strong><small>{labels.takePhoto}</small></span></button>
+                <button role="menuitem" aria-pressed={webSearchOnce} onClick={()=>setWebSearchOnce((value)=>!value)}><Globe size={17}/><span><strong>{labels.webSearch}</strong><small>{webSearchOnce ? labels.webSearchArmed : labels.webSearchNext}</small></span>{webSearchOnce&&<Check size={15}/>}</button>
+                <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);setSettingsOpen(true)}}><Zap size={17}/><span><strong>{labels.skills}</strong><small>{labels.frontendDesignDescription}</small></span></button>
               </div>}
             </div>
             <input ref={fileInputRef} type="file" accept={ACCEPTED_FILE_TYPES} multiple hidden onChange={(event)=>{if(event.target.files?.length)addDocuments(event.target.files);event.target.value=""}}/>
@@ -493,5 +502,6 @@ export default function LearnGPT() {
     {projectModalOpen&&<ProjectModal t={labels} onClose={()=>setProjectModalOpen(false)} onCreate={createProject}/>}
     {projectToDelete&&<DeleteProjectModal t={labels} project={projectToDelete} chatCount={chats.filter((chat)=>chat.projectId===projectToDelete.id&&chat.messages.length).length} onClose={()=>setProjectToDelete(null)} onConfirm={()=>deleteProject(projectToDelete)}/>}
     {languageOpen&&<LanguageModal t={labels} lang={lang} onClose={()=>setLanguageOpen(false)} onSelect={changeLang}/>}
-    {helpOpen&&<HelpModal t={labels} onClose={()=>setHelpOpen(false)}/>}</main>;
+    {helpOpen&&<HelpModal t={labels} onClose={()=>setHelpOpen(false)}/>}
+    {cameraOpen&&<CameraCapture t={labels} onCapture={(file)=>{void addImages([file]);}} onClose={()=>setCameraOpen(false)}/>}</main>;
 }

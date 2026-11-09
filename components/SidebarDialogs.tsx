@@ -2,7 +2,7 @@
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { AlertCircle, Check, Folder, Globe, HelpCircle, Loader, Trash2, X } from "react-feather";
 import type { ProjectSummary } from "../lib/types";
-import type { Dict, Lang } from "../lib/i18n";
+import { SUPPORTED_LANGUAGES, type Dict, type Lang } from "../lib/i18n";
 import { isReservedSlug, slugify } from "../lib/slug";
 
 // Shared shell: same overlay / card / bottom-sheet look as the AI settings dialog.
@@ -78,12 +78,10 @@ export function DeleteProjectModal({ t, project, chatCount, onClose, onConfirm }
   </Dialog>;
 }
 
-const LANGUAGES: [Lang, string][] = [["id", "Bahasa Indonesia"], ["en", "English"]];
-
 export function LanguageModal({ t, lang, onClose, onSelect }: { t: Dict; lang: Lang; onClose: () => void; onSelect: (lang: Lang) => void }) {
   return <Dialog t={t} icon={<Globe size={19} />} title={t.languageTitle} copy={t.languageCopy} onClose={onClose}>
     <div className="lang-list" role="radiogroup" aria-label={t.languageTitle}>
-      {LANGUAGES.map(([code, label]) => <button key={code} className="lang-option" role="radio" aria-checked={lang === code} onClick={() => onSelect(code)}><span>{label}</span>{lang === code && <Check size={17} />}</button>)}
+      {SUPPORTED_LANGUAGES.map(([code, label]) => <button key={code} className="lang-option" role="radio" aria-checked={lang === code} onClick={() => onSelect(code)}><span>{label}</span>{lang === code && <Check size={17} />}</button>)}
     </div>
   </Dialog>;
 }

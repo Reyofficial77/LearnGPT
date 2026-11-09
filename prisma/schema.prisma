@@ -97,7 +97,9 @@ model UserSettings {
   userId       String @unique
   provider     String @default("gemini")
   model        String @default("learn-1.0-smart")
-  systemPrompt String @db.Text
-  theme        String @default("dark")
+  theme             String  @default("dark")
+  enabledSkills     Json    @default("[]")
+  webSearchEnabled  Boolean @default(false)
+  dictationLanguage String  @default("id-ID")
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
