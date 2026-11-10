@@ -10,3 +10,7 @@ npm-debug.log*
 
 # Per-account skill files are private user data; keep them out of source control.
 /users/
+
+# Tauri / Rust build output
+src-tauri/target/
+src-tauri/gen/

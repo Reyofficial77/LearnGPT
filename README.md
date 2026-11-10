@@ -106,3 +106,9 @@ JavaScript runs inside an iframe sandbox without access to the LearnGPT session 
 Every account receives a private, unique 8-digit `directoryId`. It is not included in session or client-facing account data. Custom Markdown skills are stored durably in PostgreSQL and mirrored locally to `users/{directoryId}/Skill/{skill-slug}/SKILL.md`; the `users/` directory is ignored by Git because it contains private account data. On serverless deployments, PostgreSQL is the persistent source of truth because the function filesystem may be temporary.
 
 Custom skills can be uploaded from Settings or the `/` composer menu. Leave the skill name empty to use the first Markdown H1 (`# Skill name`). Use `/{skill-slug}` in a message to attach that skill's task-specific guidance. The built-in `frontend-design` skill is always active.
+
+## Windows desktop application (Tauri 2)
+
+LearnGPT includes a Tauri 2 desktop shell. See [`DESKTOP.md`](./DESKTOP.md) for the GitHub Actions build process, local development commands, and platform notes. The Windows workflow builds both `.exe` (NSIS) and `.msi` installers and publishes them as a downloadable GitHub Actions artifact.
+
+The desktop shell loads `https://www.learngpt.my.id`; the Next.js backend, PostgreSQL database, and provider credentials stay on the hosted server. This keeps the Windows package small, but the app requires an internet connection and a working LearnGPT deployment. Google OAuth inside embedded webviews may be rejected by Google's policy; see the authentication note in `DESKTOP.md`.

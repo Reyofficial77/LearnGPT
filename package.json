@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "prisma migrate deploy && next build",
     "start": "next start",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "desktop:dev": "npx --yes @tauri-apps/cli@2 dev",
+    "desktop:build": "npx --yes @tauri-apps/cli@2 build"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
