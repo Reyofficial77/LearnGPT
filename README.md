@@ -53,7 +53,7 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 
 ## Chat features
 
-- The model switcher is inside the message composer and uses a custom menu. Settings open from the account menu at the bottom of the sidebar (or with `Ctrl+Shift+,`). Settings include the built-in frontend design skill, Web Search, appearance, and a separate dictation language.
+- The model switcher is inside the message composer and uses a custom menu. Settings open from the account menu at the bottom of the sidebar (or with `Ctrl+Shift+,`). Settings include the built-in frontend design skill, Web Search, appearance, and the voice input language.
 - Users can choose `Documents & files`, `Images`, camera capture, one-message Web Search, or open Skills settings from the attachment menu. Supported documents include PDF, DOCX, text, CSV, JSON, and common code formats. PDF text extraction is best-effort; scanned PDFs may need to be uploaded as images.
 - Uploaded document/file names are replaced with generated names in the browser before the request is sent, then assigned a fresh server-side name. Original filenames are not stored or sent to the AI provider.
 - Up to 4 images or 4 documents/files can be staged. Individual documents/files are limited to 1 MB, and the combined attachment request is capped client-side to help stay within serverless request limits.
@@ -68,8 +68,8 @@ The build runs `prisma migrate deploy && next build`. PostgreSQL stores users, s
 - **Projects** have a name and a goal. The `Project` button opens the create dialog. The project name and goal are added to the AI system prompt for every chat inside that project. Deleting a project deletes its chats.
 - Routes: plain chats use `/chat/{25-char-id}`; project pages use `/{project-slug}`; chats in a project use `/{project-slug}/{25-char-id}`. The slug is made from the project name and is unique per user; names such as `chat`, `api` or `auth` are reserved (see `lib/slug.ts`).
 - **Chat titles** are written by the AI from the user's first prompt (2–6 words, in the user's language) in parallel with the first answer (`lib/chat-title.ts`). If the AI call fails, a shortened version of the prompt is used.
-- `Language` offers 25 interface locales. English and Bahasa Indonesia cover the complete interface; the other locales translate core navigation, composer, and settings labels, with some secondary text falling back to English; chat titles and LearnGPT branding stay unchanged. The choice is kept in the browser (`localStorage`), and each new chat gets a varied greeting. Dictation uses its own setting, independent from the interface language; the initial default is Indonesian (`id-ID`).
-- The composer has the message box on top and a toolbar below it: attach (+) and the model picker on the left, dictation (microphone) and send on the right. Dictation uses the browser Speech Recognition API (Chrome, Edge, Safari) and listens in the selected dictation language (default `id-ID`, with a browser-language option).
+- `Language` offers 25 interface locales. English and Bahasa Indonesia cover the complete interface; the other locales translate core navigation, composer, and settings labels, with some secondary text falling back to English; chat titles and LearnGPT branding stay unchanged. The choice is kept in the browser (`localStorage`), and each new chat gets a varied greeting. English (US) is the default interface language; voice input language is configured separately in Settings.
+- The composer has the message box on top and a toolbar below it: attach (+) and the model picker on the left, dictation (microphone) and send on the right. Dictation uses the browser Speech Recognition API (Chrome, Edge, Safari) and uses the selected voice input language (default: the browser/device language). Automatic mode uses the device locale; the browser speech API does not provide reliable automatic detection across multiple spoken languages.
 - Projects and `Chat.projectId` are created by migration `202611080002_projects` (runs automatically on build).
 
 ## Recent workspace features
@@ -100,3 +100,9 @@ JavaScript runs inside an iframe sandbox without access to the LearnGPT session 
 - The `+` menu offers camera capture, a one-message Web Search override, and a shortcut to Skills settings. Web Search can also be enabled persistently in Settings.
 - `project:project-name` JSON fenced blocks are packaged into validated ZIP downloads. Standalone `file:filename.ext` fenced blocks download as separate files. ZIP is currently the supported archive format; 7z and RAR creation are not included.
 - The sidebar search matches conversation titles and chat IDs. The brand-side arrow keeps the desktop sidebar collapsed to icons; on phones the sidebar remains a drawer.
+
+## Account folders and custom skills
+
+Every account receives a private, unique 8-digit `directoryId`. It is not included in session or client-facing account data. Custom Markdown skills are stored durably in PostgreSQL and mirrored locally to `users/{directoryId}/Skill/{skill-slug}/SKILL.md`; the `users/` directory is ignored by Git because it contains private account data. On serverless deployments, PostgreSQL is the persistent source of truth because the function filesystem may be temporary.
+
+Custom skills can be uploaded from Settings or the `/` composer menu. Leave the skill name empty to use the first Markdown H1 (`# Skill name`). Use `/{skill-slug}` in a message to attach that skill's task-specific guidance. The built-in `frontend-design` skill is always active.

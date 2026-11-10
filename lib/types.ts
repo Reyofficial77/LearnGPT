@@ -2,13 +2,13 @@ export type LearnModel = "learn-1.0-smart" | "learn-1.0-study" | "learn-2.0-thin
 export type ChatAttachment = { id: string; name: string; mimeType: string; size: number; extractedText?: string; dataUrl?: string };
 export type ChatMessage = { role: "user" | "assistant"; content: string; images?: string[]; attachments?: ChatAttachment[] };
 export type Theme = "dark" | "light" | "system";
-export type Settings = { model: LearnModel; theme: Theme; enabledSkills: string[]; webSearchEnabled: boolean; dictationLanguage: string };
+export type Settings = { model: LearnModel; theme: Theme; enabledSkills: string[]; webSearchEnabled: boolean; speechLanguage: string };
 export type ProjectSummary = { id: string; name: string; goal: string; slug: string };
 export type Chat = { id: string; title: string; projectId: string | null; messages: ChatMessage[]; updatedAt: number; pinned: boolean; isPublic: boolean };
 export const DEFAULT_SETTINGS: Settings = {
   model: "learn-1.0-smart",
   theme: "dark",
-  enabledSkills: [],
+  enabledSkills: ["frontend-design"],
   webSearchEnabled: false,
-  dictationLanguage: "id-ID"
+  speechLanguage: "auto"
 };

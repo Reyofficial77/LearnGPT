@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/prisma";
 import { createSession } from "../../../../../lib/server-auth";
+import { generateUserDirectoryId } from "../../../../../lib/user-directory";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
     const existing = await prisma.user.findFirst({ where: { OR: [{ provider: "google", providerId: String(profile.sub) }, { email: String(profile.email).toLowerCase() }] } });
     const user = existing
       ? await prisma.user.update({ where: { id: existing.id }, data: { provider: "google", providerId: String(profile.sub), email: String(profile.email).toLowerCase(), name: profile.name || profile.email, avatar: profile.picture || null } })
-      : await prisma.user.create({ data: { provider: "google", providerId: String(profile.sub), email: String(profile.email).toLowerCase(), name: profile.name || profile.email, avatar: profile.picture || null } });
+      : await prisma.user.create({ data: { directoryId: await generateUserDirectoryId(), provider: "google", providerId: String(profile.sub), email: String(profile.email).toLowerCase(), name: profile.name || profile.email, avatar: profile.picture || null } });
     await createSession(user.id);
     const response = NextResponse.redirect(new URL("/", request.url));
     response.cookies.set("learngpt_google_oauth", "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });

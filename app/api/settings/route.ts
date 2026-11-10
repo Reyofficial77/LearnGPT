@@ -7,17 +7,22 @@ import { LEARN_MODELS } from "../../../lib/models";
 
 export const runtime = "nodejs";
 const THEMES = ["dark", "light", "system"] as const;
-const AVAILABLE_SKILLS = new Set(["frontend-design"]);
-const DICTATION_LANGUAGES = new Set(["auto", "id-ID", "en-US", "es-ES", "fr-FR", "de-DE", "pt-BR", "ja-JP", "ko-KR", "zh-CN", "hi-IN", "ar-SA"]);
+const SPEECH_LANGUAGES = new Set(["auto", "id-ID", "en-US", "es-ES", "fr-FR", "de-DE", "pt-BR", "ja-JP", "ko-KR", "zh-CN", "hi-IN", "ar-SA"]);
 function settingsPayload(settings: any) {
-  const skills = Array.isArray(settings.enabledSkills) ? settings.enabledSkills.filter((item: unknown): item is string => typeof item === "string" && AVAILABLE_SKILLS.has(item)) : [];
+  const skills = Array.isArray(settings.enabledSkills) ? settings.enabledSkills.filter((item: unknown): item is string => typeof item === "string") : [];
   return {
     model: LEARN_MODELS.includes(settings.model as any) ? settings.model : DEFAULT_SETTINGS.model,
     theme: THEMES.includes(settings.theme as typeof THEMES[number]) ? settings.theme : DEFAULT_SETTINGS.theme,
-    enabledSkills: skills,
+    enabledSkills: [...new Set(["frontend-design", ...skills])],
     webSearchEnabled: Boolean(settings.webSearchEnabled),
-    dictationLanguage: DICTATION_LANGUAGES.has(settings.dictationLanguage) ? settings.dictationLanguage : "id-ID"
+    speechLanguage: SPEECH_LANGUAGES.has(settings.speechLanguage) ? settings.speechLanguage : "auto"
   };
+}
+
+function sameOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try { return new URL(origin).origin === request.nextUrl.origin; } catch { return false; }
 }
 
 export async function GET() {
@@ -30,19 +35,18 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!sameOrigin(req)) return NextResponse.json({ error: "Cross-origin request blocked." }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const provider = "ollama";
   const model = LEARN_MODELS.includes(body.model) ? String(body.model) : DEFAULT_SETTINGS.model;
   const theme = THEMES.includes(body.theme) ? body.theme : DEFAULT_SETTINGS.theme;
-  const enabledSkills: Prisma.InputJsonValue = Array.isArray(body.enabledSkills)
-    ? [...new Set<string>(body.enabledSkills.filter((item: unknown): item is string => typeof item === "string" && AVAILABLE_SKILLS.has(item)))]
-    : [...DEFAULT_SETTINGS.enabledSkills];
+  const enabledSkills: Prisma.InputJsonValue = ["frontend-design"];
   const webSearchEnabled = typeof body.webSearchEnabled === "boolean" ? body.webSearchEnabled : DEFAULT_SETTINGS.webSearchEnabled;
-  const dictationLanguage = DICTATION_LANGUAGES.has(body.dictationLanguage) ? body.dictationLanguage : DEFAULT_SETTINGS.dictationLanguage;
+  const speechLanguage = SPEECH_LANGUAGES.has(body.speechLanguage) ? body.speechLanguage : DEFAULT_SETTINGS.speechLanguage;
   const settings = await prisma.userSettings.upsert({
     where: { userId: user.id },
-    update: { provider, model, theme, enabledSkills, webSearchEnabled, dictationLanguage },
-    create: { userId: user.id, provider, model, theme, enabledSkills, webSearchEnabled, dictationLanguage }
+    update: { provider, model, theme, enabledSkills, webSearchEnabled, speechLanguage },
+    create: { userId: user.id, provider, model, theme, enabledSkills, webSearchEnabled, speechLanguage }
   });
   return NextResponse.json({ settings: settingsPayload(settings) });
 }

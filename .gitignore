@@ -7,3 +7,6 @@ out/
 npm-debug.log*
 .DS_Store
 *.tsbuildinfo
+
+# Per-account skill files are private user data; keep them out of source control.
+/users/

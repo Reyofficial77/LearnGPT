@@ -1,6 +1,6 @@
 "use client";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowRight, BookOpen, Check, ChevronUp, Camera, FileText, Folder, Image as ImageIcon, List, Menu, Mic, Paperclip, Plus, Send, X, Zap, Globe } from "react-feather";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, ArrowDown, BookOpen, Check, ChevronUp, Camera, Code, FileText, Folder, Image as ImageIcon, Menu, Mic, Paperclip, Plus, Send, X, Zap, Globe } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import CameraCapture from "./CameraCapture";
@@ -14,7 +14,6 @@ import { LEARN_MODELS, MODEL_LABELS } from "../lib/models";
 import type { LearnModel } from "../lib/types";
 
 type PendingFile = ChatAttachment & { dataUrl: string };
-type PromptCard = { icon: ReactNode; title: string; copy: string };
 
 const NEW_CHAT_TITLE = "New Chat";
 // URL shapes: "/" (new chat) · "/chat/{id}" (chat) · "/{project}" (project page) · "/{project}/{id}" (chat inside a project)
@@ -81,7 +80,7 @@ function buildPayload(msgs: ChatMessage[]) {
   }));
 }
 
-function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved }; }
+function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved, enabledSkills: ["frontend-design"] }; }
 function randomGreetingIndex(lang: Lang, previous = -1) {
   const count = getDict(lang).greetings.length;
   let next = Math.floor(Math.random() * count);
@@ -90,7 +89,8 @@ function randomGreetingIndex(lang: Lang, previous = -1) {
 }
 
 export default function LearnGPT() {
-  const [user, setUser] = useState<{ id:string; provider:string; name:string; email?:string; avatar?:string } | null>(null);
+  const [user, setUser] = useState<{ provider:string; name:string; email?:string; avatar?:string } | null>(null);
+  const [skills, setSkills] = useState<{ id:string; name:string; slug:string; builtIn:boolean }[]>([{ id:"builtin-frontend-design", name:"Frontend design", slug:"frontend-design", builtIn:true }]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [chats, setChats] = useState<Chat[]>([]);
   const [current, setCurrent] = useState<Chat | null>(null);
@@ -98,6 +98,7 @@ export default function LearnGPT() {
   const [loading, setLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
   const [greetingIndex, setGreetingIndex] = useState(0);
   const [status, setStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -116,6 +117,8 @@ export default function LearnGPT() {
   const chatsRef = useRef<Chat[]>([]);
   const projectsRef = useRef<ProjectSummary[]>([]);
   const recognitionRef = useRef<any>(null);
+  const shouldListenRef = useRef(false);
+  const recognitionRestartRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deletedSlugsRef = useRef<Set<string>>(new Set());
   const busyRef = useRef(false);
   const [images, setImages] = useState<string[]>([]);
@@ -123,6 +126,7 @@ export default function LearnGPT() {
   const [attaching, setAttaching] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -131,10 +135,12 @@ export default function LearnGPT() {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const skillFileInputRef = useRef<HTMLInputElement>(null);
+  const skillMenuRef = useRef<HTMLDivElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes, projectsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings"), fetch("/api/projects")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } if (projectsRes.ok) { const data = await projectsRes.json(); const projectList: ProjectSummary[] = data.projects || []; projectsRef.current = projectList; setProjects(projectList); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved)); setLoaded(true); })().catch(() => setStatus(getDict(lang).workspaceLoadError)); }, []);
+  useEffect(() => { (async () => { const [sessionRes, chatsRes, settingsRes, projectsRes, skillsRes] = await Promise.all([fetch("/api/auth/session"), fetch("/api/chats"), fetch("/api/settings"), fetch("/api/projects"), fetch("/api/skills")]); const session = await sessionRes.json(); if (!session.user) { location.href = "/auth/login"; return; } setUser(session.user); if (chatsRes.ok) { const data = await chatsRes.json(); const list = (data.chats || []).map(normalizeChat); chatsRef.current = list; setChats(list); } if (projectsRes.ok) { const data = await projectsRes.json(); const projectList: ProjectSummary[] = data.projects || []; projectsRef.current = projectList; setProjects(projectList); } if (skillsRes.ok) { const data = await skillsRes.json(); if (Array.isArray(data.skills)) setSkills(data.skills); } let saved: Partial<AppSettings> | undefined; if (settingsRes.ok) { const data = await settingsRes.json(); saved = data.settings; } setSettings(mergeSettings(saved)); setLoaded(true); })().catch(() => setStatus(getDict(lang).workspaceLoadError)); }, []);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
   // Keep the UI in sync with the URL — direct visits, refresh, back/forward.
   // Reads projects/chats from refs so a project created or deleted in the same tick is already visible.
@@ -175,7 +181,7 @@ export default function LearnGPT() {
   }, []);
   useEffect(() => { const theme = settings.theme || "dark"; document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme === "system" ? "light dark" : theme; }, [settings.theme]);
   // Stop the microphone if the component goes away.
-  useEffect(() => () => { try { recognitionRef.current?.abort(); } catch { /* already stopped */ } }, []);
+  useEffect(() => () => { shouldListenRef.current = false; if (recognitionRestartRef.current) clearTimeout(recognitionRestartRef.current); try { recognitionRef.current?.abort(); } catch { /* already stopped */ } }, []);
   // Ctrl+Shift+, opens Settings (shown in the account menu).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === "Comma") { event.preventDefault(); setSidebarOpen(false); setSettingsOpen(true); } };
@@ -211,6 +217,15 @@ export default function LearnGPT() {
     window.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("pointerdown", onPointerDown); window.removeEventListener("keydown", onKeyDown); };
   }, [attachMenuOpen, modelMenuOpen]);
+  useEffect(() => {
+    if (!skillMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!skillMenuRef.current?.contains(target) && !taRef.current?.contains(target)) setSkillMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [skillMenuOpen]);
   const displayName = user?.name?.split(" ")[0] || (lang === "id" ? "di sana" : "there");
   const model = settings.model;
   const closeSidebarOnMobile = () => { if (window.matchMedia("(max-width: 900px)").matches) setSidebarOpen(false); };
@@ -268,6 +283,27 @@ export default function LearnGPT() {
     if (imageFiles.length) await addImages(imageFiles);
     if (otherFiles.length) await addDocuments(otherFiles);
   };
+  const uploadSkill = async (file: File, name = ""): Promise<string | null> => {
+    const form = new FormData(); form.set("file", file); form.set("name", name);
+    try {
+      const response = await fetch("/api/skills", { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return data.error || "Could not save the skill.";
+      setSkills((items) => [...items.filter((item) => item.slug !== data.skill.slug), { ...data.skill, builtIn: false }].sort((a, b) => a.builtIn ? -1 : b.builtIn ? 1 : a.name.localeCompare(b.name)));
+      setStatus(`Skill added: ${data.skill.name}`);
+      setTimeout(() => setStatus(""), 2200);
+      return null;
+    } catch { return getDict(lang).serverUnavailable; }
+  };
+  const deleteSkill = async (slug: string): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/skills", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return data.error || "Could not remove the skill.";
+      setSkills((items) => items.filter((item) => item.slug !== slug));
+      return null;
+    } catch { return getDict(lang).serverUnavailable; }
+  };
   const send = async (raw = input, attached = images, attachedFiles = files) => {
     const forceWebSearch = webSearchOnce;
     const prompt = raw.trim(); if ((!prompt && !attached.length && !attachedFiles.length) || loading || attaching) return;
@@ -316,36 +352,52 @@ export default function LearnGPT() {
       setSettings(previous); setStatus(getDict(lang).modelSaveFailed);
     }
   };
-  // Dictation (Web Speech API). The recognized words are appended to what is already typed.
-  const cancelDictation = () => { const recognition = recognitionRef.current; recognitionRef.current = null; setListening(false); try { recognition?.abort(); } catch { /* already stopped */ } };
+  // Keep the browser recognizer alive across brief pauses; users stop it explicitly from the mic or input field.
+  const cancelDictation = () => {
+    shouldListenRef.current = false;
+    if (recognitionRestartRef.current) { clearTimeout(recognitionRestartRef.current); recognitionRestartRef.current = null; }
+    const recognition = recognitionRef.current; recognitionRef.current = null; setListening(false);
+    try { recognition?.abort(); } catch { /* already stopped */ }
+  };
   const toggleDictation = () => {
-    if (listening) { try { recognitionRef.current?.stop(); } catch { cancelDictation(); } return; }
+    if (shouldListenRef.current || listening) { cancelDictation(); return; }
     const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Recognition) { setStatus(getDict(lang).dictationNotSupported); return; }
     const recognition = new Recognition();
-    const browserLanguage = (navigator.language || "id-ID").toLowerCase();
-    const automaticLanguage = browserLanguage === "id" ? "id-ID" : browserLanguage === "en" ? "en-US" : navigator.language || "id-ID";
-    recognition.lang = settings.dictationLanguage === "auto" ? automaticLanguage : settings.dictationLanguage;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    const browserLanguage = (navigator.language || "en-US");
+    const automaticLanguage = browserLanguage.toLowerCase() === "id" ? "id-ID" : browserLanguage.toLowerCase() === "en" ? "en-US" : browserLanguage;
+    recognition.lang = settings.speechLanguage === "auto" ? automaticLanguage : settings.speechLanguage;
+    recognition.maxAlternatives = 1; recognition.continuous = true; recognition.interimResults = true;
     const base = input.trim() ? `${input.replace(/\s+$/, "")} ` : "";
     let finalText = "";
+    recognition.onstart = () => { if (shouldListenRef.current && recognitionRef.current === recognition) setListening(true); };
     recognition.onresult = (event: any) => {
-      if (recognitionRef.current !== recognition) return;
+      if (recognitionRef.current !== recognition || !shouldListenRef.current) return;
       let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) { const result = event.results[i]; if (result.isFinal) finalText += result[0].transcript; else interim += result[0].transcript; }
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) finalText += `${result[0].transcript} `;
+        else interim += result[0].transcript;
+      }
       setInput(base + (finalText + interim).replace(/\s+/g, " ").replace(/^\s+/, ""));
     };
     recognition.onerror = (event: any) => {
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") setStatus(getDict(lang).microphoneBlocked);
-      else if (event.error === "network") setStatus(getDict(lang).dictationNetwork);
-      else if (event.error === "audio-capture") setStatus(getDict(lang).microphoneMissing);
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") { setStatus(getDict(lang).microphoneBlocked); cancelDictation(); }
+      else if (event.error === "network") { setStatus(getDict(lang).dictationNetwork); cancelDictation(); }
+      else if (event.error === "audio-capture") { setStatus(getDict(lang).microphoneMissing); cancelDictation(); }
       else if (event.error !== "no-speech" && event.error !== "aborted") setStatus(getDict(lang).dictationUnexpected);
     };
-    recognition.onend = () => { if (recognitionRef.current === recognition) { recognitionRef.current = null; setListening(false); } };
-    recognitionRef.current = recognition; setStatus("");
-    try { recognition.start(); setListening(true); } catch { recognitionRef.current = null; setStatus(getDict(lang).microphoneStartFailed); }
+    recognition.onend = () => {
+      if (recognitionRef.current !== recognition || !shouldListenRef.current) return;
+      if (recognitionRestartRef.current) clearTimeout(recognitionRestartRef.current);
+      recognitionRestartRef.current = setTimeout(() => {
+        recognitionRestartRef.current = null;
+        if (!shouldListenRef.current || recognitionRef.current !== recognition) return;
+        try { recognition.start(); } catch { recognitionRestartRef.current = setTimeout(() => { try { if (shouldListenRef.current && recognitionRef.current === recognition) recognition.start(); } catch { cancelDictation(); } }, 350); }
+      }, 220);
+    };
+    recognitionRef.current = recognition; shouldListenRef.current = true; setStatus("");
+    try { recognition.start(); setListening(true); } catch { shouldListenRef.current = false; recognitionRef.current = null; setStatus(getDict(lang).microphoneStartFailed); }
   };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
   const deleteChat = async (id:string) => { const target = chats.find((item)=>item.id===id); const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){const home=target?.projectId?projectsRef.current.find((project)=>project.id===target.projectId):undefined;setCurrent(null);goTo(home?`/${home.slug}`:"/");}} };
@@ -416,11 +468,18 @@ export default function LearnGPT() {
   const statusGood = /\bsaved\b|berhasil|tersimpan|disalin/i.test(status);
   const hasMessages = !!current?.messages.length;
   const labels = getDict(lang);
-  const promptCards: PromptCard[] = [
-    { icon: <BookOpen size={20} />, title: labels.promptLearnTitle, copy: labels.promptLearnCopy },
-    { icon: <List size={20} />, title: labels.promptTaskTitle, copy: labels.promptTaskCopy },
-    { icon: <Zap size={20} />, title: labels.promptWorkTitle, copy: labels.promptWorkCopy }
-  ];
+  const slashMatch = input.match(/(?:^|\s)\/([a-z0-9-]*)$/i);
+  const slashSkills = slashMatch ? skills.filter((skill) => `${skill.name} ${skill.slug}`.toLowerCase().includes(slashMatch[1].toLowerCase())) : [];
+  const chooseSkill = (slug: string) => {
+    const match = input.match(/(?:^|\s)\/([a-z0-9-]*)$/i);
+    const prefix = match ? input.slice(0, match.index) : input;
+    const spacer = prefix && !/\s$/.test(prefix) ? " " : "";
+    setInput(`${prefix}${spacer}/${slug} `); setSkillMenuOpen(false); taRef.current?.focus();
+  };
+  const resizeSidebar = (nextWidth: number) => {
+    if (nextWidth < 190) { setSidebarOpen(false); return; }
+    setSidebarOpen(true); setSidebarWidth(Math.min(380, Math.max(216, nextWidth)));
+  };
   const routeProject = routeSlug ? projects.find((project) => project.slug === routeSlug) ?? null : null;
   const currentProject = current?.projectId ? projects.find((project) => project.id === current.projectId) ?? null : null;
   const activeProjectId = currentProject?.id ?? (route.kind === "project" ? routeProject?.id ?? null : null);
@@ -429,8 +488,8 @@ export default function LearnGPT() {
   const chatTitle = hasMessages ? current!.title : showProjectHome ? routeProject!.name : NEW_CHAT_TITLE;
 
   if (!user) return <main className="chat-shell"><div className="loading-screen" role="status"><span className="brand-mark large"><BookOpen size={26}/></span><strong>{labels.loadingWorkspace}</strong></div></main>;
-  return <main className="chat-shell">
-    <Sidebar t={labels} open={sidebarOpen} user={user} projects={projects} chats={chats} currentChatId={current?.id ?? null} activeProjectId={activeProjectId} titlingChatId={titlingChatId}
+  return <main className="chat-shell" onDragOver={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(true)}}} onDragLeave={(event)=>{const target=event.relatedTarget;if(!(target instanceof Node)||!event.currentTarget.contains(target))setDragging(false)}} onDrop={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(false);if(event.dataTransfer.files.length)void handleFiles(event.dataTransfer.files)}}}>
+    <Sidebar t={labels} open={sidebarOpen} width={sidebarWidth} onResize={resizeSidebar} user={user} projects={projects} chats={chats} currentChatId={current?.id ?? null} activeProjectId={activeProjectId} titlingChatId={titlingChatId}
       onClose={()=>setSidebarOpen(false)} onToggleSidebar={()=>setSidebarOpen((open)=>!open)} onNewChat={newChat} onCreateProject={()=>{closeSidebarOnMobile();setProjectModalOpen(true)}} onOpenProject={openProject} onDeleteProject={setProjectToDelete}
       onOpenChat={openChat} onDeleteChat={deleteChat} onRenameChat={renameChat} onPinChat={togglePinChat} onShareChat={shareChat} onClearChats={clearHistory}
       onOpenSettings={()=>{closeSidebarOnMobile();setSettingsOpen(true)}} onOpenLanguage={()=>{closeSidebarOnMobile();setLanguageOpen(true)}} onOpenHelp={()=>{closeSidebarOnMobile();setHelpOpen(true)}} onSignOut={signOut}/>
@@ -449,7 +508,7 @@ export default function LearnGPT() {
             <span className="brand-mark large"><BookOpen size={26}/></span>
             <h1>{labels.welcomeHeading(displayName)}</h1>
             <p className="welcome-copy">{labels.greetings[greetingIndex % labels.greetings.length]}</p>
-            <div className="prompt-grid">{promptCards.map((card)=><button key={card.title} onClick={()=>send(card.copy,[])}><span className="prompt-icon">{card.icon}</span><span className="prompt-text"><strong>{card.title}</strong><small>{card.copy}</small></span><ArrowRight size={18} className="prompt-arrow"/></button>)}</div>
+            
           </div> : <div className="conversation">
             {current!.messages.map((message,index)=>message.role==="user"
               ? <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className="user-message"><div className="user-bubble">{message.images?.length?<div className={`msg-images ${message.images.length===1?"single":""}`}>{message.images.map((src,i)=><button className="msg-image" key={i} onClick={()=>setLightbox(src)} aria-label={labels.viewImage(i+1)}><img src={src} alt={`Attachment ${i+1}`}/></button>)}</div>:null}{message.attachments?.length?<div className="message-files">{message.attachments.map((file)=><div className="message-file" key={file.id}><FileText size={15}/><span>{file.name}</span></div>)}</div>:null}{message.content&&<span className="user-text">{message.content}</span>}</div></div></div>
@@ -460,14 +519,19 @@ export default function LearnGPT() {
         {status&&<div className={`chat-status ${statusGood?"ok":""}`} role="status">{statusGood?<Check size={16}/>:<AlertCircle size={16}/>}<span>{status}</span><button onClick={()=>setStatus("")} aria-label={labels.dismissMessage}><X size={15}/></button></div>}
         {showJump&&msgCount>0&&<button className="jump-bottom" onClick={()=>scrollToBottom(true)} aria-label={labels.scrollToLatest}><ArrowDown size={18}/></button>}
       </div>
-      <div className="composer-zone" onDragOver={(event)=>{if(event.dataTransfer.types.includes("Files")){event.preventDefault();setDragging(true)}}} onDragLeave={(event)=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDragging(false)}} onDrop={(event)=>{event.preventDefault();setDragging(false);if(event.dataTransfer.files.length)void handleFiles(event.dataTransfer.files)}}>
+      <div className="composer-zone">
         <div className={`composer ${images.length||files.length||attaching?"has-images":""} ${dragging?"dragging":""}`}>
           {(images.length>0||files.length>0||attaching)&&<div className="attachment-tray">
             {images.map((src,index)=><div className="attachment" key={`${index}-${src.length}`}><img src={src} alt={`Image attachment ${index+1}`}/><button className="attachment-remove" onClick={()=>setImages((items)=>items.filter((_,i)=>i!==index))} aria-label={`Remove image ${index+1}`}><X size={14}/></button></div>)}
             {files.map((file)=><div className="attachment-file" key={file.id}><FileText size={19}/><span title={file.name}>{file.name}</span><button className="attachment-remove" onClick={()=>setFiles((items)=>items.filter((item)=>item.id!==file.id))} aria-label={`Remove ${file.name}`}><X size={14}/></button></div>)}
             {attaching&&<div className="attachment attachment-loading" aria-label="Processing attachment"><i/></div>}
           </div>}
-            <textarea ref={taRef} rows={1} aria-label={labels.messageLabel} value={input} onChange={(event)=>{if(listening)cancelDictation();setInput(event.target.value)}} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();send()}}} placeholder={listening?labels.listening:images.length||files.length?labels.addMessage:labels.askAnything}/>
+            <textarea ref={taRef} rows={1} aria-label={labels.messageLabel} value={input} onChange={(event)=>{if(listening)cancelDictation();const value=event.target.value;setInput(value);setSkillMenuOpen(/(?:^|\s)\/[a-z0-9-]*$/i.test(value))}} onFocus={()=>{if(listening)cancelDictation()}} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Escape"&&skillMenuOpen){event.preventDefault();setSkillMenuOpen(false);return}if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();if(skillMenuOpen&&slashSkills[0])chooseSkill(slashSkills[0].slug);else send()}}} placeholder={listening?labels.listening:images.length||files.length?labels.addMessage:labels.askAnything}/>
+            {skillMenuOpen&&slashMatch&&<div ref={skillMenuRef} className="skill-command-menu" role="listbox" aria-label="Skills">
+              {slashSkills.map((skill)=><button key={skill.id} role="option" aria-selected="false" onMouseDown={(event)=>event.preventDefault()} onClick={()=>chooseSkill(skill.slug)}><span className="skill-command-icon"><Code size={16}/></span><span><strong>{skill.name}</strong><small>/{skill.slug}{skill.builtIn?" · Built in":" · Custom skill"}</small></span></button>)}
+              <button className="skill-command-add" onMouseDown={(event)=>event.preventDefault()} onClick={()=>{setSkillMenuOpen(false);skillFileInputRef.current?.click()}}><Plus size={16}/><span><strong>{labels.addSkillFile}</strong><small>Upload a .md skill file</small></span></button>
+            </div>}
+            <input ref={skillFileInputRef} type="file" accept=".md,text/markdown,text/plain" hidden onChange={(event)=>{const file=event.target.files?.[0];if(file)void uploadSkill(file);event.target.value=""}}/>
           <div className="composer-bar">
             <div className="composer-tools">
             <div className="attach-menu-wrap" ref={attachMenuRef}>
@@ -498,7 +562,7 @@ export default function LearnGPT() {
         </div>
         <p>{labels.composerFooter}</p>
       </div>
-    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label={lang === "id" ? "Pratinjau gambar" : "Image preview"} onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label={labels.close} onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} t={labels} onClose={()=>setSettingsOpen(false)} onSave={saveSettings}/>}
+    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label={lang === "id" ? "Pratinjau gambar" : "Image preview"} onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label={labels.close} onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} skills={skills} t={labels} onClose={()=>setSettingsOpen(false)} onSave={saveSettings} onUploadSkill={uploadSkill} onDeleteSkill={deleteSkill}/>}
     {projectModalOpen&&<ProjectModal t={labels} onClose={()=>setProjectModalOpen(false)} onCreate={createProject}/>}
     {projectToDelete&&<DeleteProjectModal t={labels} project={projectToDelete} chatCount={chats.filter((chat)=>chat.projectId===projectToDelete.id&&chat.messages.length).length} onClose={()=>setProjectToDelete(null)} onConfirm={()=>deleteProject(projectToDelete)}/>}
     {languageOpen&&<LanguageModal t={labels} lang={lang} onClose={()=>setLanguageOpen(false)} onSelect={changeLang}/>}

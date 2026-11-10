@@ -9,6 +9,7 @@ datasource db {
 
 model User {
   id           String        @id @default(cuid())
+  directoryId  String        @unique
   email        String        @unique
   name         String
   passwordHash String?
@@ -22,6 +23,7 @@ model User {
   projects     Project[]
   settings     UserSettings?
   memory       UserMemory?
+  skills       UserSkill[]
   @@unique([provider, providerId])
 }
 
@@ -77,6 +79,19 @@ model Message {
   @@index([chatId, createdAt])
 }
 
+model UserSkill {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  slug      String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, slug])
+  @@index([userId, updatedAt])
+}
+
 model GlobalMemory {
   id        String   @id
   content   String   @db.Text
@@ -98,8 +113,8 @@ model UserSettings {
   provider     String @default("gemini")
   model        String @default("learn-1.0-smart")
   theme             String  @default("dark")
-  enabledSkills     Json    @default("[]")
+  enabledSkills     Json    @default("[\"frontend-design\"]")
   webSearchEnabled  Boolean @default(false)
-  dictationLanguage String  @default("id-ID")
+  speechLanguage    String  @default("auto")
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

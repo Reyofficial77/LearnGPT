@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/prisma";
 import { createSession } from "../../../../../lib/server-auth";
+import { generateUserDirectoryId } from "../../../../../lib/user-directory";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
     const existing = await prisma.user.findFirst({ where: { OR: [{ provider: "github", providerId: String(profile.id) }, { email }] } });
     const user = existing
       ? await prisma.user.update({ where: { id: existing.id }, data: { provider: "github", providerId: String(profile.id), email, name: profile.name || profile.login, avatar: profile.avatar_url || null } })
-      : await prisma.user.create({ data: { provider: "github", providerId: String(profile.id), email, name: profile.name || profile.login, avatar: profile.avatar_url || null } });
+      : await prisma.user.create({ data: { directoryId: await generateUserDirectoryId(), provider: "github", providerId: String(profile.id), email, name: profile.name || profile.login, avatar: profile.avatar_url || null } });
     await createSession(user.id);
     const response = NextResponse.redirect(new URL("/", request.url));
     response.cookies.set("learngpt_github_oauth", "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });

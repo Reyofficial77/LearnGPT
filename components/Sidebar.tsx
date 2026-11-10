@@ -1,5 +1,5 @@
 "use client";
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Edit3, Folder, Globe, HelpCircle, Lock, LogOut, MoreHorizontal, Bookmark, MessageSquare, Plus, Search, Share2, Settings as SettingsIcon, Trash2, User, X } from "react-feather";
 import type { Chat, ProjectSummary } from "../lib/types";
 import { type Dict } from "../lib/i18n";
@@ -9,7 +9,7 @@ export function Brand({ compact = false, onNavigate }: { compact?: boolean; onNa
 }
 
 type Props = {
-  t: Dict; open: boolean; user: { name: string; email?: string; avatar?: string };
+  t: Dict; open: boolean; width: number; onResize: (width: number) => void; user: { name: string; email?: string; avatar?: string };
   projects: ProjectSummary[]; chats: Chat[]; currentChatId: string | null; activeProjectId: string | null; titlingChatId: string | null;
   onClose: () => void; onToggleSidebar: () => void; onNewChat: () => void; onCreateProject: () => void;
   onOpenProject: (project: ProjectSummary) => void; onDeleteProject: (project: ProjectSummary) => void;
@@ -54,6 +54,7 @@ export default function Sidebar(props: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const resizePointer = useRef<number | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const visibleChats = chats.filter((chat) => chat.messages.length);
@@ -89,7 +90,11 @@ export default function Sidebar(props: Props) {
     onOpen={() => props.onOpenChat(chat)} onDelete={() => props.onDeleteChat(chat.id)} onRename={() => props.onRenameChat(chat)}
     onPin={() => props.onPinChat(chat)} onShare={() => props.onShareChat(chat)} />;
 
-  return <aside className={`sidebar ${props.open ? "sidebar-open" : "sidebar-collapsed"}`} aria-label={t.sidebarLabel}>
+  const handleResizeDown = (event: ReactPointerEvent<HTMLDivElement>) => { if (window.matchMedia("(max-width: 900px)").matches) return; event.preventDefault(); resizePointer.current = event.pointerId; event.currentTarget.setPointerCapture(event.pointerId); };
+  const handleResizeMove = (event: ReactPointerEvent<HTMLDivElement>) => { if (resizePointer.current === event.pointerId) props.onResize(event.clientX); };
+  const handleResizeUp = (event: ReactPointerEvent<HTMLDivElement>) => { if (resizePointer.current === event.pointerId) resizePointer.current = null; };
+
+  return <aside className={`sidebar ${props.open ? "sidebar-open" : "sidebar-collapsed"}`} style={{ width: props.open ? props.width : 76, flexBasis: props.open ? props.width : 76 }} aria-label={t.sidebarLabel}>
     <div className="sidebar-top"><Brand compact onNavigate={props.onNewChat} /><div className="sidebar-top-actions"><button className="icon-button sidebar-collapse-trigger" onClick={props.onToggleSidebar} aria-label={t.toggleSidebar} title={t.toggleSidebar}>{props.open ? <ChevronLeft size={19}/> : <ChevronRight size={19}/>}</button><button className="icon-button close-sidebar" onClick={props.onClose} aria-label={t.closeMenu}><X size={20} /></button></div></div>
     <button className="new-chat" onClick={props.onNewChat} title={t.newChat}><Plus size={18} /><span>{t.newChat}</span></button>
     <div className="sidebar-scroll">
@@ -131,5 +136,6 @@ export default function Sidebar(props: Props) {
         <ChevronUp size={16} className="account-chevron" />
       </button>
     </div>
+    <div className="sidebar-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" aria-valuemin={190} aria-valuemax={380} aria-valuenow={props.width} tabIndex={0} onPointerDown={handleResizeDown} onPointerMove={handleResizeMove} onPointerUp={handleResizeUp} onPointerCancel={handleResizeUp} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); props.onResize(props.width - 12); } if (event.key === "ArrowRight") { event.preventDefault(); props.onResize(props.width + 12); } }} />
   </aside>;
 }

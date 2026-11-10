@@ -24,4 +24,4 @@ export async function destroySession() {
   if (token) await prisma.session.deleteMany({ where:{ token } });
   jar.set(COOKIE, "", { httpOnly:true, sameSite:"lax", secure:process.env.NODE_ENV === "production", path:"/", maxAge:0 });
 }
-export function publicUser(user:any) { return { id:user.id, provider:user.provider || "email", name:user.name, email:user.email, avatar:user.avatar || undefined }; }
+export function publicUser(user:any) { return { provider:user.provider || "email", name:user.name, email:user.email, avatar:user.avatar || undefined }; }
