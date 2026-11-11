@@ -39,4 +39,11 @@ Google blocks OAuth authorization requests made inside embedded webviews under i
 
 ## Security model
 
-The desktop shell does not register native Tauri commands or expose filesystem, shell, or process plugins to the hosted page. Its capability list is empty; the remote frontend receives no native IPC permissions. Backend secrets remain on the hosted server and must never be added to the Tauri configuration or GitHub Actions workflow.
+The OAuth provider console redirect URLs remain the hosted callback URLs:
+
+- Google: `https://www.learngpt.my.id/api/auth/google/callback`
+- GitHub: `https://www.learngpt.my.id/api/auth/github/callback`
+
+No Google or GitHub client secret belongs in the Windows installer. The `learngpt://` return protocol is registered by the installed desktop application, not by either OAuth provider.
+
+The desktop shell does not expose filesystem, shell, or process access to the hosted page. Its remote capability is limited to the verified LearnGPT production origin and grants only deep-link event access plus opening URLs on that same LearnGPT origin. OAuth handoff codes are random, hashed before storage, expire after two minutes, and can be consumed only once. Normal session cookies remain HttpOnly and are created by the hosted backend. Backend secrets remain on the hosted server and must never be added to the Tauri configuration or GitHub Actions workflow.

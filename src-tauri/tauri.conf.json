@@ -23,8 +23,11 @@
       }
     ],
     "security": {
-      "capabilities": []
-    }
+      "capabilities": [
+        "learngpt-desktop"
+      ]
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -41,6 +44,15 @@
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "learngpt"
+        ]
       }
     }
   }

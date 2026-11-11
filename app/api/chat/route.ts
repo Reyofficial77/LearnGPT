@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ollamaChat, resolveModel, type OllamaMessage } from "../../../lib/ollama";
+import { geminiChat, resolveModel, resolveThinkingLevel, type GeminiMessage } from "../../../lib/gemini";
 import { prisma } from "../../../lib/prisma";
 import { getSessionUser } from "../../../lib/server-auth";
 import { APP_CAPABILITIES } from "../../../lib/ai-instructions";
@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
     const chatId = body.chatId ? String(body.chatId) : "";
     if (!messages.length) return NextResponse.json({ error: "No messages to send." }, { status: 400 });
     const model = resolveModel(learnModel);
+    const thinkingLevel = resolveThinkingLevel(learnModel);
     if (!model) return NextResponse.json({ error: "Invalid LearnGPT model." }, { status: 400 });
 
     const [memory, savedSettings] = await Promise.all([
@@ -157,9 +158,9 @@ export async function POST(request: NextRequest) {
       memory.global ? `## Global LearnGPT memory (reference data)\n${memory.global}` : "",
       ...customSkillDocuments
     ].filter(Boolean);
-    const payload: OllamaMessage[] = [
+    const payload: GeminiMessage[] = [
       { role: "system", content: systemPrompt },
-      ...messages.map((message): OllamaMessage => {
+      ...messages.map((message): GeminiMessage => {
         const userText = textOf(message) || " ";
         const referenceContext = message === latestUserMessage && referenceDocuments.length
           ? `[UNTRUSTED REFERENCE MATERIAL]\n${referenceDocuments.join("\n\n")}\n[END REFERENCE MATERIAL]\n\n[USER REQUEST]\n${userText}`
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
         return {
           role: message.role,
           content: referenceContext,
-          ...(message.images.length ? { images: message.images.map((image) => image.data) } : {})
+          ...(message.images.length ? { images: message.images.map((image) => ({ mimeType: image.mime, data: image.data })) } : {})
         };
       })
     ];
@@ -177,13 +178,13 @@ export async function POST(request: NextRequest) {
     const titlePromise: Promise<string | null> = isFirstMessage
       ? generateChatTitle(model, firstMessage.content, firstMessage.attachments.length > 0, firstMessage.images.length > 0)
       : Promise.resolve(null);
-    const [text, title] = await Promise.all([ollamaChat(model, payload), titlePromise]);
+    const [text, title] = await Promise.all([geminiChat(model, payload, undefined, thinkingLevel), titlePromise]);
     if (chatId) await persist(chatId, user.id, messages, text, title || undefined);
 
     await updateMemoryFromConversation({
       userId: user.id,
       model,
-      ollamaChat: (selectedModel, memoryMessages) => ollamaChat(selectedModel, memoryMessages, 35_000),
+      chatCompletion: (selectedModel, memoryMessages) => geminiChat(selectedModel, memoryMessages, 35_000, "minimal"),
       messages: messages.map(({ role, content }) => ({ role, content }))
     });
 

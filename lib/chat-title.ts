@@ -1,4 +1,4 @@
-import { ollamaChat } from "./ollama";
+import { geminiChat } from "./gemini";
 
 const TITLE_TIMEOUT_MS = 20_000;
 const TITLE_MAX = 60;
@@ -38,10 +38,10 @@ export async function generateChatTitle(model: string, prompt: string, hasFiles:
   const fallback = fallbackTitle(prompt, hasFiles, hasImages);
   if (!prompt.trim()) return fallback;
   try {
-    const raw = await ollamaChat(model, [
+    const raw = await geminiChat(model, [
       { role: "system", content: TITLE_SYSTEM_PROMPT },
       { role: "user", content: prompt.trim().slice(0, 1500) }
-    ], TITLE_TIMEOUT_MS);
+    ], TITLE_TIMEOUT_MS, "minimal");
     const title = cleanTitle(raw);
     return title.length >= 2 ? title : fallback;
   } catch {

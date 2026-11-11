@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!sameOrigin(req)) return NextResponse.json({ error: "Cross-origin request blocked." }, { status: 403 });
   const body = await req.json().catch(() => ({}));
-  const provider = "ollama";
+  const provider = "gemini";
   const model = LEARN_MODELS.includes(body.model) ? String(body.model) : DEFAULT_SETTINGS.model;
   const theme = THEMES.includes(body.theme) ? body.theme : DEFAULT_SETTINGS.theme;
   const enabledSkills: Prisma.InputJsonValue = ["frontend-design"];

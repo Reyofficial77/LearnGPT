@@ -38,7 +38,7 @@ function looksSensitive(value: string) {
 export async function updateMemoryFromConversation(args: {
   userId: string;
   model: string;
-  ollamaChat: (model: string, messages: { role: "system" | "user"; content: string }[]) => Promise<string>;
+  chatCompletion: (model: string, messages: { role: "system" | "user"; content: string }[]) => Promise<string>;
   messages: { role: "user" | "assistant"; content: string }[];
 }) {
   const lastUserMessage = [...args.messages].reverse().find((message) => message.role === "user")?.content || "";
@@ -51,7 +51,7 @@ export async function updateMemoryFromConversation(args: {
   const prompt = `Review this recent conversation and return strict JSON only: {"userMemory": string|null, "globalMemory": string|null}.\n\nPrivate user memory (logical path: user/${args.userId}/USER.md):\n${current.user}\n\nGlobal memory (MEMORY.md):\n${current.global}\n\nRecent conversation:\n${transcript}\n\nRules:\n- User memory belongs only to the signed-in account represented by userId ${args.userId}. Update it only with durable facts/preferences explicitly stated by that person. Preserve useful details and remove corrected outdated details. Return null when there is nothing durable to add. Never store credentials, sensitive personal data, precise location, or guesses.\n- Global memory is shared across every account. Update it only if the user's latest message explicitly asks for a rule to apply to all LearnGPT users. Never include an individual user's identity, preferences, projects, chat details, or private information. Return null without an explicit shared rule.\n- Return each non-null field as the complete updated Markdown document, not a fragment. Keep each document under 6,000 characters.`;
 
   try {
-    const raw = await args.ollamaChat(args.model, [
+    const raw = await args.chatCompletion(args.model, [
       { role: "system", content: "You maintain concise, privacy-conscious Markdown memory documents. Follow every boundary exactly. Output one valid JSON object and nothing else." },
       { role: "user", content: prompt }
     ]);

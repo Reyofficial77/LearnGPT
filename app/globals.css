@@ -177,6 +177,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 .input-action:hover { color: var(--text); }
 
+.auth-provider-hint { margin: -2px 0 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .form-options { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 20px; font-size: 14px; }
 .remember { display: flex; align-items: center; gap: 10px; min-height: 28px; color: var(--muted); cursor: pointer; }
 .remember input { width: 18px; height: 18px; accent-color: var(--blue); }

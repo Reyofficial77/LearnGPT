@@ -15,20 +15,20 @@ Required:
 
 The Google and GitHub client IDs are intentionally server-side too. The browser never receives OAuth configuration or client secrets.
 
-## AI provider (Ollama Cloud)
+## AI provider (Google Gemini API / Gemma 4)
 
-LearnGPT uses **Ollama Cloud** through one server-side key. Users do not need to enter any API key.
+LearnGPT uses Google's hosted Gemma 4 models through the Gemini API. The API key is stored on the server; users never need to enter their own key.
 
-Set in Vercel → Environment Variables:
-- `OLLAMA_API_KEY` (required, create it at https://ollama.com/settings/keys)
+Set in Vercel → Project Settings → Environment Variables:
+- `GEMINI_API_KEY` (required; create one at https://aistudio.google.com/apikey)
 
-| LearnGPT model | Ollama model | Optional env override |
-| --- | --- | --- |
-| Learn 1.0 Smart | `gemma4:31b` | `OLLAMA_MODEL_SMART` |
-| Learn 1.0 Study | `beam` | `OLLAMA_MODEL_STUDY` |
-| Learn 2.0 Thinking | `gpt-oss:120b` | `OLLAMA_MODEL_THINKING` |
+| LearnGPT model | Gemma 4 model | Thinking level | Optional env override |
+| --- | --- | --- | --- |
+| Learn 1.0 Smart | `gemma-4-26b-a4b-it` | `minimal` | `GEMINI_MODEL_SMART` |
+| Learn 1.0 Study | `gemma-4-31b-it` | `minimal` | `GEMINI_MODEL_STUDY` |
+| Learn 2.0 Thinking | `gemma-4-31b-it` | `high` | `GEMINI_MODEL_THINKING` |
 
-The key is only read in `/api/chat` on the server and is never sent to the browser. You can list the model names your key can use with `curl https://ollama.com/api/tags`. Usage is billed to the Ollama account that owns the key.
+The model IDs and thinking levels are resolved on the server. The API key is sent only from the server to Google and is never exposed to the browser. Google AI Studio usage limits and billing apply to the Google account that owns the key. No Prisma migration is required for this provider change.
 
 ## OAuth callback URLs
 
