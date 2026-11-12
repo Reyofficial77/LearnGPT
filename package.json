@@ -14,7 +14,8 @@
     "android:init": "npx --yes @tauri-apps/cli@2 android init --ci",
     "android:build": "npx --yes @tauri-apps/cli@2 android build --apk --aab --ci",
     "ios:init": "npx --yes @tauri-apps/cli@2 ios init --ci",
-    "ios:build:simulator": "npx --yes @tauri-apps/cli@2 ios build --target aarch64-sim --ci"
+    "ios:build:simulator": "npx --yes @tauri-apps/cli@2 ios build --target aarch64-sim --ci",
+    "icons:generate": "npx --yes @tauri-apps/cli@2 icon src-tauri/app-icon.png"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",

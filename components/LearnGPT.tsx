@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, BookOpen, Check, ChevronUp, Camera, Code, FileText, Folder, Image as ImageIcon, Menu, Mic, Paperclip, Plus, Send, X, Zap, Globe } from "react-feather";
+import { AlertCircle, Aperture, ArrowDown, BookOpen, Check, ChevronUp, Camera, Code, Download, FileText, Folder, Image as ImageIcon, Maximize2, Mic, Paperclip, Plus, Send, Sidebar as SidebarToggleIcon, X, Zap, Globe } from "react-feather";
 import { usePathname } from "next/navigation";
 import MessageContent from "./MessageContent";
 import CameraCapture from "./CameraCapture";
@@ -68,16 +68,33 @@ async function fileToJpegDataUrl(file: File): Promise<string> {
 // Keep the two most recent messages with attachments in the request; older image data is marked as omitted.
 function buildPayload(msgs: ChatMessage[]) {
   const keep = new Set<number>();
-  for (let i = msgs.length - 1; i >= 0 && keep.size < 2; i--) if (msgs[i].images?.length || msgs[i].attachments?.length) keep.add(i);
+  for (let i = msgs.length - 1; i >= 0 && keep.size < 2; i--) if (msgs[i].role === "user" && (msgs[i].images?.length || msgs[i].attachments?.length)) keep.add(i);
+  // Generated images on assistant messages are served from /api/images and never re-sent; only their count is.
   return msgs.map((message, index) => ({
     role: message.role,
     content: message.content,
-    images: keep.has(index) ? message.images : undefined,
+    images: message.role === "user" && keep.has(index) ? message.images : undefined,
     // Older files no longer need their upload data URL, but their extracted text
     // stays in context so the assistant can still refer to previously sent files.
-    attachments: message.attachments?.map(({ dataUrl, ...metadata }) => keep.has(index) ? { ...metadata, ...(dataUrl ? { dataUrl } : {}) } : metadata),
+    attachments: message.role === "user" ? message.attachments?.map(({ dataUrl, ...metadata }) => keep.has(index) ? { ...metadata, ...(dataUrl ? { dataUrl } : {}) } : metadata) : undefined,
     imageCount: message.images?.length || 0
   }));
+}
+
+// Saves an image (generated or attached) as a file. Uses a blob so it works for same-origin URLs and data URLs alike.
+async function saveImage(src: string): Promise<boolean> {
+  try {
+    const response = await fetch(src);
+    if (!response.ok) return false;
+    const blob = await response.blob();
+    const ext = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : blob.type === "image/gif" ? "gif" : "png";
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = `learngpt-image-${Date.now()}.${ext}`;
+    document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return true;
+  } catch { return false; }
 }
 
 function mergeSettings(saved: Partial<AppSettings> = {}): AppSettings { return { ...DEFAULT_SETTINGS, ...saved, enabledSkills: ["frontend-design"] }; }
@@ -110,6 +127,7 @@ export default function LearnGPT() {
   const [listening, setListening] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [webSearchOnce, setWebSearchOnce] = useState(false);
+  const [imageOnce, setImageOnce] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<ProjectSummary | null>(null);
   const pathname = usePathname();
   const route = parseRoute(pathname || "/");
@@ -179,7 +197,23 @@ export default function LearnGPT() {
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
-  useEffect(() => { const theme = settings.theme || "dark"; document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme === "system" ? "light dark" : theme; }, [settings.theme]);
+  useEffect(() => {
+    const theme = settings.theme || "dark";
+    document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme === "system" ? "light dark" : theme;
+    // Keep the browser/app status bar the same color as the page so no dark strip shows above a light page.
+    const syncThemeColor = () => {
+      const background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+      if (!background) return;
+      let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+      if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
+      meta.content = background;
+    };
+    syncThemeColor();
+    if (theme !== "system") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", syncThemeColor);
+    return () => media.removeEventListener("change", syncThemeColor);
+  }, [settings.theme]);
   // Stop the microphone if the component goes away.
   useEffect(() => () => { shouldListenRef.current = false; if (recognitionRestartRef.current) clearTimeout(recognitionRestartRef.current); try { recognitionRef.current?.abort(); } catch { /* already stopped */ } }, []);
   // Ctrl+Shift+, opens Settings (shown in the account menu).
@@ -306,6 +340,7 @@ export default function LearnGPT() {
   };
   const send = async (raw = input, attached = images, attachedFiles = files) => {
     const forceWebSearch = webSearchOnce;
+    const forceImage = imageOnce;
     const prompt = raw.trim(); if ((!prompt && !attached.length && !attachedFiles.length) || loading || attaching) return;
     const uploadChars = attached.reduce((total, image) => total + image.length, 0) + attachedFiles.reduce((total, file) => total + file.dataUrl.length, 0);
     if (uploadChars > MAX_COMBINED_UPLOAD_CHARS) { setStatus(getDict(lang).attachmentsTooLarge); return; }
@@ -318,11 +353,11 @@ export default function LearnGPT() {
       const userMessage: ChatMessage = { role: "user", content: prompt, ...(attached.length ? { images: attached } : {}), ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
       const messages = [...chat.messages, userMessage]; const requestMessages = buildPayload(messages); const requestUploadChars = requestMessages.reduce((total, message) => total + (message.images || []).reduce((sum, image) => sum + image.length, 0) + (message.attachments || []).reduce((sum, file) => sum + ("dataUrl" in file && typeof file.dataUrl === "string" ? file.dataUrl.length : 0), 0), 0); if (requestUploadChars > MAX_COMBINED_UPLOAD_CHARS) throw new Error(getDict(lang).attachmentsTooLarge); const optimistic = { ...chat, title: chat.messages.length ? chat.title : NEW_CHAT_TITLE, messages, updatedAt: Date.now() };
       setCurrent(optimistic); setChats((items) => [optimistic, ...items.filter((item) => item.id !== optimistic.id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)); setInput(""); setImages([]); setFiles([]); closeSidebarOnMobile(); goTo(chatPath(chat, projectsRef.current));
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, messages: requestMessages, webSearch: forceWebSearch }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: chat.id, model, messages: requestMessages, webSearch: forceWebSearch, imageMode: forceImage, lang }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { throw new Error(response.status === 413 ? getDict(lang).attachmentsTooLargeRetry : data.error || `${lang === "id" ? "Permintaan gagal" : "Request failed"} (${response.status})`); }
-      setWebSearchOnce(false);
-      const savedUserMessage = { ...userMessage, ...(attachedFiles.length ? { attachments: Array.isArray(data.attachments) ? data.attachments as ChatAttachment[] : [] } : {}) }; const finalChat = { ...optimistic, title: chat.messages.length ? chat.title : (typeof data.title === "string" && data.title.trim() ? data.title.trim().slice(0, 80) : draftTitle), messages: [...chat.messages, savedUserMessage, { role: "assistant" as const, content: data.text }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt));
+      setWebSearchOnce(false); setImageOnce(false);
+      const savedUserMessage = { ...userMessage, ...(attachedFiles.length ? { attachments: Array.isArray(data.attachments) ? data.attachments as ChatAttachment[] : [] } : {}) }; const finalChat = { ...optimistic, title: chat.messages.length ? chat.title : (typeof data.title === "string" && data.title.trim() ? data.title.trim().slice(0, 80) : draftTitle), messages: [...chat.messages, savedUserMessage, { role: "assistant" as const, content: typeof data.text === "string" ? data.text : "", ...(Array.isArray(data.images) && data.images.length ? { images: data.images as string[] } : {}) }], updatedAt: Date.now() }; setCurrent(finalChat); setChats((items) => [finalChat, ...items.filter((item) => item.id !== finalChat.id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt));
     } catch (error) {
       // Nothing was saved on failure: put the user's message back in the composer instead of making them retype it.
       if (chat) { const restored = chat; setCurrent(restored); setChats((items) => items.map((item) => item.id === restored.id ? restored : item)); }
@@ -398,6 +433,11 @@ export default function LearnGPT() {
     };
     recognitionRef.current = recognition; shouldListenRef.current = true; setStatus("");
     try { recognition.start(); setListening(true); } catch { shouldListenRef.current = false; recognitionRef.current = null; setStatus(getDict(lang).microphoneStartFailed); }
+  };
+  const downloadImage = async (src: string) => {
+    const ok = await saveImage(src);
+    setStatus(ok ? getDict(lang).imageSaved : getDict(lang).imageDownloadFailed);
+    if (ok) window.setTimeout(() => setStatus(""), 2200);
   };
   const signOut = async () => { await fetch("/api/auth/logout",{method:"POST"}); location.href="/auth/login"; };
   const deleteChat = async (id:string) => { const target = chats.find((item)=>item.id===id); const response=await fetch(`/api/chats/${id}`,{method:"DELETE"}); if(response.ok){setChats((items)=>items.filter((item)=>item.id!==id));if(current?.id===id){const home=target?.projectId?projectsRef.current.find((project)=>project.id===target.projectId):undefined;setCurrent(null);goTo(home?`/${home.slug}`:"/");}} };
@@ -496,7 +536,7 @@ export default function LearnGPT() {
     {sidebarOpen&&<button className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)} aria-label={labels.closeMenu}/> }
     <section className="chat-main">
       <header className="chat-header">
-        <div className="header-left"><button className="icon-button menu-button" onClick={()=>setSidebarOpen((open)=>!open)} aria-label={labels.toggleSidebar} aria-expanded={sidebarOpen}><Menu size={20}/></button>{currentProject&&<><button className="chat-crumb" title={currentProject.goal} onClick={()=>openProject(currentProject)}>{currentProject.name}</button><span className="crumb-sep" aria-hidden="true">/</span></>}<h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
+        <div className="header-left"><div className="header-actions" role="group" aria-label={labels.sidebarLabel}><button className="icon-button" onClick={()=>setSidebarOpen((open)=>!open)} aria-label={labels.toggleSidebar} title={labels.toggleSidebar} aria-expanded={sidebarOpen}><SidebarToggleIcon size={20}/></button><button className="icon-button" onClick={newChat} aria-label={labels.newChat} title={labels.newChat}><Plus size={20}/></button><button className="icon-button" onClick={()=>{closeSidebarOnMobile();setProjectModalOpen(true)}} aria-label={labels.project} title={labels.project} aria-haspopup="dialog"><Folder size={20}/></button></div>{currentProject&&<><button className="chat-crumb" title={currentProject.goal} onClick={()=>openProject(currentProject)}>{currentProject.name}</button><span className="crumb-sep" aria-hidden="true">/</span></>}<h2 className="chat-title" title={chatTitle}>{chatTitle}</h2></div>
       </header>
       <div className="chat-scroll-wrap">
         <div className="chat-content" ref={scrollRef} onScroll={onScroll}>
@@ -512,8 +552,8 @@ export default function LearnGPT() {
           </div> : <div className="conversation">
             {current!.messages.map((message,index)=>message.role==="user"
               ? <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className="user-message"><div className="user-bubble">{message.images?.length?<div className={`msg-images ${message.images.length===1?"single":""}`}>{message.images.map((src,i)=><button className="msg-image" key={i} onClick={()=>setLightbox(src)} aria-label={labels.viewImage(i+1)}><img src={src} alt={`Attachment ${i+1}`}/></button>)}</div>:null}{message.attachments?.length?<div className="message-files">{message.attachments.map((file)=><div className="message-file" key={file.id}><FileText size={15}/><span>{file.name}</span></div>)}</div>:null}{message.content&&<span className="user-text">{message.content}</span>}</div></div></div>
-              : <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className={`ai-message ${message.content.includes("```")?"rich":""}`}><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><MessageContent content={message.content}/></div></div></div></div>)}
-            {loading&&<div className="message-group"><div className="ai-message"><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><p className="thinking-text" role="status">{labels.thinking}</p></div></div></div></div>}
+              : <div className="message-group" data-msg={index} key={`${message.role}-${index}`}><div className={`ai-message ${message.content.includes("```")?"rich":""}`}><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span>{message.content&&<div className="markdown-content"><MessageContent content={message.content}/></div>}{message.images?.length?<div className="generated-images">{message.images.map((src,i)=><figure className="generated-image" key={`${src}-${i}`}><button className="generated-image-open" onClick={()=>setLightbox(src)} aria-label={labels.previewImage}><img src={src} alt={labels.generatedImageAlt} loading="lazy"/></button><figcaption><button onClick={()=>setLightbox(src)}><Maximize2 size={14}/>{labels.previewImage}</button><button onClick={()=>void downloadImage(src)}><Download size={14}/>{labels.downloadImage}</button></figcaption></figure>)}</div>:null}</div></div></div>)}
+            {loading&&<div className="message-group"><div className="ai-message"><span className="message-ai-icon" aria-hidden="true"><BookOpen size={16}/></span><div className="ai-body"><span className="sr-only">LearnGPT</span><div className="markdown-content"><p className="thinking-text" role="status">{imageOnce?labels.creatingImage:labels.thinking}</p>{imageOnce&&<div className="image-skeleton" aria-hidden="true"/>}</div></div></div></div>}
           </div>}
         </div>
         {status&&<div className={`chat-status ${statusGood?"ok":""}`} role="status">{statusGood?<Check size={16}/>:<AlertCircle size={16}/>}<span>{status}</span><button onClick={()=>setStatus("")} aria-label={labels.dismissMessage}><X size={15}/></button></div>}
@@ -526,7 +566,7 @@ export default function LearnGPT() {
             {files.map((file)=><div className="attachment-file" key={file.id}><FileText size={19}/><span title={file.name}>{file.name}</span><button className="attachment-remove" onClick={()=>setFiles((items)=>items.filter((item)=>item.id!==file.id))} aria-label={`Remove ${file.name}`}><X size={14}/></button></div>)}
             {attaching&&<div className="attachment attachment-loading" aria-label="Processing attachment"><i/></div>}
           </div>}
-            <textarea ref={taRef} rows={1} aria-label={labels.messageLabel} value={input} onChange={(event)=>{if(listening)cancelDictation();const value=event.target.value;setInput(value);setSkillMenuOpen(/(?:^|\s)\/[a-z0-9-]*$/i.test(value))}} onFocus={()=>{if(listening)cancelDictation()}} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Escape"&&skillMenuOpen){event.preventDefault();setSkillMenuOpen(false);return}if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();if(skillMenuOpen&&slashSkills[0])chooseSkill(slashSkills[0].slug);else send()}}} placeholder={listening?labels.listening:images.length||files.length?labels.addMessage:labels.askAnything}/>
+            <textarea ref={taRef} rows={1} aria-label={labels.messageLabel} value={input} onChange={(event)=>{if(listening)cancelDictation();const value=event.target.value;setInput(value);setSkillMenuOpen(/(?:^|\s)\/[a-z0-9-]*$/i.test(value))}} onFocus={()=>{if(listening)cancelDictation()}} onPaste={(event)=>{const pasted=Array.from(event.clipboardData.files).filter((file)=>file.type.startsWith("image/"));if(pasted.length){event.preventDefault();addImages(pasted)}}} onKeyDown={(event)=>{if(event.key==="Escape"&&skillMenuOpen){event.preventDefault();setSkillMenuOpen(false);return}if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();if(skillMenuOpen&&slashSkills[0])chooseSkill(slashSkills[0].slug);else send()}}} placeholder={listening?labels.listening:imageOnce?labels.imagePlaceholder:images.length||files.length?labels.addMessage:labels.askAnything}/>
             {skillMenuOpen&&slashMatch&&<div ref={skillMenuRef} className="skill-command-menu" role="listbox" aria-label="Skills">
               {slashSkills.map((skill)=><button key={skill.id} role="option" aria-selected="false" onMouseDown={(event)=>event.preventDefault()} onClick={()=>chooseSkill(skill.slug)}><span className="skill-command-icon"><Code size={16}/></span><span><strong>{skill.name}</strong><small>/{skill.slug}{skill.builtIn?" · Built in":" · Custom skill"}</small></span></button>)}
               <button className="skill-command-add" onMouseDown={(event)=>event.preventDefault()} onClick={()=>{setSkillMenuOpen(false);skillFileInputRef.current?.click()}}><Plus size={16}/><span><strong>{labels.addSkillFile}</strong><small>Upload a .md skill file</small></span></button>
@@ -541,6 +581,7 @@ export default function LearnGPT() {
                 <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);imageInputRef.current?.click()}}><ImageIcon size={17}/><span><strong>{labels.images}</strong><small>{labels.imagesHint}</small></span></button>
                 <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);setCameraOpen(true)}}><Camera size={17}/><span><strong>{labels.camera}</strong><small>{labels.takePhoto}</small></span></button>
                 <button role="menuitem" aria-pressed={webSearchOnce} onClick={()=>setWebSearchOnce((value)=>!value)}><Globe size={17}/><span><strong>{labels.webSearch}</strong><small>{webSearchOnce ? labels.webSearchArmed : labels.webSearchNext}</small></span>{webSearchOnce&&<Check size={15}/>}</button>
+                <button role="menuitem" aria-pressed={imageOnce} onClick={()=>{setImageOnce((value)=>!value);setAttachMenuOpen(false);taRef.current?.focus()}}><Aperture size={17}/><span><strong>{labels.createImage}</strong><small>{imageOnce ? labels.createImageArmed : labels.createImageHint}</small></span>{imageOnce&&<Check size={15}/>}</button>
                 <button role="menuitem" onClick={()=>{setAttachMenuOpen(false);setSettingsOpen(true)}}><Zap size={17}/><span><strong>{labels.skills}</strong><small>{labels.frontendDesignDescription}</small></span></button>
               </div>}
             </div>
@@ -552,6 +593,7 @@ export default function LearnGPT() {
                 {LEARN_MODELS.map((item)=><button className="model-option" key={item} role="option" aria-selected={model===item} onClick={()=>changeModel(item)}><span><strong>{MODEL_LABELS[item]}</strong><small>{item==="learn-1.0-smart"?labels.modelEveryday:item==="learn-1.0-study"?labels.modelStudy:labels.modelThinking}</small></span>{model===item&&<Check size={16}/>}</button>)}
               </div>}
             </div>
+              {imageOnce&&<span className="mode-chip"><Aperture size={14}/><span>{labels.createImage}</span><button onClick={()=>setImageOnce(false)} aria-label={labels.cancel} title={labels.cancel}><X size={13}/></button></span>}
             </div>
             <div className="composer-actions">
               <button className={`mic-button ${listening?"listening":""}`} onClick={toggleDictation} disabled={loading||attaching} aria-pressed={listening} aria-label={listening?labels.stopDictation:labels.dictate} title={listening?labels.stopDictation:labels.dictate}><Mic size={19}/></button>
@@ -562,7 +604,7 @@ export default function LearnGPT() {
         </div>
         <p>{labels.composerFooter}</p>
       </div>
-    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label={lang === "id" ? "Pratinjau gambar" : "Image preview"} onClick={()=>setLightbox(null)}><button className="lightbox-close" aria-label={labels.close} onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Attachment preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} skills={skills} t={labels} onClose={()=>setSettingsOpen(false)} onSave={saveSettings} onUploadSkill={uploadSkill} onDeleteSkill={deleteSkill}/>}
+    </section>{lightbox&&<div className="lightbox" role="dialog" aria-modal="true" aria-label={lang === "id" ? "Pratinjau gambar" : "Image preview"} onClick={()=>setLightbox(null)}><div className="lightbox-actions"><button className="lightbox-download" onClick={(event)=>{event.stopPropagation();void downloadImage(lightbox)}}><Download size={16}/>{labels.downloadImage}</button></div><button className="lightbox-close" aria-label={labels.close} onClick={()=>setLightbox(null)}><X size={20}/></button><img src={lightbox} alt="Image preview" onClick={(event)=>event.stopPropagation()}/></div>}{settingsOpen&&<SettingsModal settings={settings} skills={skills} t={labels} onClose={()=>setSettingsOpen(false)} onSave={saveSettings} onUploadSkill={uploadSkill} onDeleteSkill={deleteSkill}/>}
     {projectModalOpen&&<ProjectModal t={labels} onClose={()=>setProjectModalOpen(false)} onCreate={createProject}/>}
     {projectToDelete&&<DeleteProjectModal t={labels} project={projectToDelete} chatCount={chats.filter((chat)=>chat.projectId===projectToDelete.id&&chat.messages.length).length} onClose={()=>setProjectToDelete(null)} onConfirm={()=>deleteProject(projectToDelete)}/>}
     {languageOpen&&<LanguageModal t={labels} lang={lang} onClose={()=>setLanguageOpen(false)} onSelect={changeLang}/>}

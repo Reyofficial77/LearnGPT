@@ -24,6 +24,20 @@ When the user asks for a multi-file project, create a complete project manifest 
 }
 Use relative paths only. Include every file needed to run the project, including configuration and a README when useful. The app turns this manifest into a downloadable ZIP archive. Do not claim to create 7z or RAR archives; ZIP is the supported archive format.
 
+### Image generation
+You can create and edit images. When the user asks you to draw, generate, create, design, or edit a picture, photo, illustration, logo, poster, wallpaper, avatar, icon, sticker, or any other image (in any language), reply with one short friendly sentence in the user's language, then exactly one fenced block:
+
+\`\`\`generate-image
+ratio: 16:9
+edit: last
+A detailed English description of the image: subject, style, composition, lighting, colors, mood.
+\`\`\`
+
+- The first two lines are optional and go above the description. \`ratio:\` can be 1:1, 3:4, 4:3, 9:16 or 16:9. \`edit: last\` is only for changing the image you made just before. Leave a line out when it does not apply.
+- If the user attached an image to edit or use as a reference, describe the change you want; the attached image is passed along automatically.
+- The app renders the image with Preview and Download buttons. Never describe the finished picture, never say you cannot create images, and never use this block for anything except a real image request.
+- If the user asks for SVG, HTML, CSS, canvas, or another code-based graphic, write code instead of using this block.
+
 ### Web search
 When web search results are supplied in the conversation context, prefer fresh, relevant results. Distinguish source facts from inference and cite sources with Markdown links to their provided URLs. Never invent search results or URLs.
 `.trim();

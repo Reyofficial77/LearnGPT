@@ -1,5 +1,8 @@
-
 name: LearnGPT All Platforms
+
+# Builds the LearnGPT desktop shell (Windows, Linux, macOS) and the mobile apps
+# (Android APK + AAB, iOS/iPadOS Simulator). The apps load https://www.learngpt.my.id,
+# so no backend secrets, database, or `npm ci` are needed here.
 
 on:
   push:
@@ -15,7 +18,10 @@ permissions:
 
 concurrency:
   group: learngpt-build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+env:
+  TAURI_CLI: "@tauri-apps/cli@2"
 
 jobs:
   # ==========================================
@@ -24,6 +30,7 @@ jobs:
   desktop:
     name: Desktop - ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -31,12 +38,18 @@ jobs:
           - platform: Windows
             os: windows-latest
             artifact: LearnGPT-Windows
+            bundles: nsis,msi
           - platform: Linux
             os: ubuntu-22.04
             artifact: LearnGPT-Linux
+            bundles: deb,rpm,appimage
           - platform: macOS
             os: macos-15
             artifact: LearnGPT-macOS
+            bundles: app,dmg
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
@@ -46,7 +59,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -71,19 +83,27 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             patchelf \
+            xdg-utils \
             rpm
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Generate app icons
+        run: npx --yes "$TAURI_CLI" icon src-tauri/app-icon.png
 
       - name: Build desktop application
-        run: npm run desktop:build
+        run: npx --yes "$TAURI_CLI" build --bundles "${{ matrix.bundles }}"
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}-${{ github.run_number }}
-          path: src-tauri/target/release/bundle/
+          path: |
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
           if-no-files-found: error
           retention-days: 14
 
@@ -93,6 +113,10 @@ jobs:
   android:
     name: Android - APK and AAB
     runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
@@ -102,7 +126,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
 
       - name: Setup Java
         uses: actions/setup-java@v6
@@ -126,36 +149,76 @@ jobs:
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-35" \
+            "platforms;android-36" \
             "build-tools;35.0.0" \
+            "build-tools;36.0.0" \
             "ndk;27.2.12479018"
 
       - name: Configure Android NDK
         run: |
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Install Rust Android targets
         run: |
           rustup target add \
             aarch64-linux-android \
             armv7-linux-androideabi \
-            i686-linux-android \
             x86_64-linux-android
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Generate app icons (desktop + Android + iOS sets)
+        run: npx --yes "$TAURI_CLI" icon src-tauri/app-icon.png
 
       - name: Initialize Android project
-        run: npm run android:init
+        run: npx --yes "$TAURI_CLI" android init --ci
 
       - name: Build Android APK and AAB
-        run: npm run android:build
+        run: |
+          npx --yes "$TAURI_CLI" android build --apk --aab --ci \
+            --target aarch64 --target armv7 --target x86_64
+
+      # Release APKs come out unsigned and cannot be installed. Sign them so the APK installs on a
+      # phone. Add the ANDROID_KEYSTORE_* repository secrets to keep the same signing key between
+      # builds (needed to update an installed app); otherwise a throw-away CI key is generated.
+      - name: Sign Android APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          OUT="$PWD/dist-android"
+          mkdir -p "$OUT"
+          KEYSTORE="$OUT/learngpt.jks"
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+            STOREPASS="$ANDROID_KEYSTORE_PASSWORD"; ALIAS="$ANDROID_KEY_ALIAS"; KEYPASS="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          else
+            STOREPASS="learngpt-ci"; ALIAS="learngpt"; KEYPASS="learngpt-ci"
+            keytool -genkeypair -keystore "$KEYSTORE" -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$STOREPASS" -keypass "$KEYPASS" -dname "CN=LearnGPT CI, O=LearnGPT, C=ID"
+          fi
+          found=0
+          while IFS= read -r apk; do
+            found=1
+            name="$(basename "$apk" .apk)"
+            "$BT/zipalign" -f -p 4 "$apk" "$OUT/$name-aligned.apk"
+            "$BT/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ALIAS" \
+              --ks-pass "pass:$STOREPASS" --key-pass "pass:$KEYPASS" \
+              --out "$OUT/LearnGPT-$name.apk" "$OUT/$name-aligned.apk"
+            "$BT/apksigner" verify "$OUT/LearnGPT-$name.apk"
+            rm -f "$OUT/$name-aligned.apk"
+          done < <(find src-tauri/gen/android/app/build/outputs -name '*.apk')
+          [ "$found" = 1 ] || { echo "No APK was produced by the Android build."; exit 1; }
+          rm -f "$KEYSTORE"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v6
         with:
           name: LearnGPT-Android-APK-${{ github.run_number }}
-          path: src-tauri/gen/android/app/build/outputs/**/*.apk
+          path: dist-android/*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -173,6 +236,13 @@ jobs:
   ios:
     name: iOS and iPadOS Simulator
     runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
 
     steps:
       - name: Checkout repository
@@ -182,7 +252,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -204,23 +273,41 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Install CocoaPods
+      - name: Install iOS tooling
         run: |
-          brew install cocoapods
+          brew list cocoapods >/dev/null 2>&1 || brew install cocoapods
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Generate app icons (desktop + Android + iOS sets)
+        run: npx --yes "$TAURI_CLI" icon src-tauri/app-icon.png
 
       - name: Initialize iOS project
-        run: npm run ios:init
+        run: npx --yes "$TAURI_CLI" ios init --ci
 
+      # Tauri exports an .ipa after archiving, which needs signing and is not meaningful for a
+      # simulator build. The simulator .app already exists inside the archive by then, so judge the
+      # step by whether the .app was produced.
       - name: Build iOS Simulator application
-        run: npm run ios:build:simulator
+        run: |
+          set +e
+          npx --yes "$TAURI_CLI" ios build --target aarch64-sim --ci
+          status=$?
+          set -e
+          APP="$(find src-tauri/gen/apple/build -type d -name '*.app' -print -quit 2>/dev/null || true)"
+          if [ -z "$APP" ]; then
+            echo "::error::The iOS Simulator build did not produce an .app bundle (tauri exit code $status)."
+            exit 1
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::tauri ios build exited with $status after producing the .app (usually the .ipa export step, which a simulator build does not need)."
+          fi
+          mkdir -p dist-ios
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist-ios/LearnGPT-iOS-Simulator.app.zip"
 
       - name: Upload iOS Simulator application
         uses: actions/upload-artifact@v6
         with:
           name: LearnGPT-iOS-iPadOS-Simulator-${{ github.run_number }}
-          path: src-tauri/gen/apple/build/**/*.app
+          path: dist-ios/*.zip
           if-no-files-found: error
           retention-days: 14

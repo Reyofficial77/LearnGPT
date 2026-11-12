@@ -11,6 +11,7 @@ import { extractAttachment, textFromAttachment, type ExtractedAttachment } from 
 import { loadMemoryContext, updateMemoryFromConversation } from "../../../lib/memory";
 import { generateChatTitle, fallbackTitle } from "../../../lib/chat-title";
 import { formatSearchContext, needsWebSearch, webSearch } from "../../../lib/web-search";
+import { extractImageRequest, generateImage, type ImageRef, type ImageRequest } from "../../../lib/image-gen";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -19,7 +20,7 @@ const MAX_IMAGES_PER_MESSAGE = 4;
 const MAX_IMAGE_CHARS = 2_500_000;
 
 type Img = { mime: string; data: string; url: string };
-type Msg = { role: "user" | "assistant"; content: string; images: Img[]; attachments: ExtractedAttachment[]; omitted: number };
+type Msg = { role: "user" | "assistant"; content: string; images: Img[]; attachments: ExtractedAttachment[]; omitted: number; generated: number };
 
 function cleanImages(value: unknown): Img[] {
   if (!Array.isArray(value)) return [];
@@ -68,17 +69,20 @@ function cleanMessages(value: unknown): Msg[] {
       const images = message.role === "user" ? cleanImages(message.images) : [];
       const attachments = message.role === "user" ? cleanAttachments(message.attachments) : [];
       const declared = Number(message.imageCount) || 0;
-      return { role: message.role, content: String(message.content ?? "").slice(0, 40_000), images, attachments, omitted: Math.max(0, declared - images.length) };
+      // Assistant messages can carry generated images; those are never re-sent, only noted for the model.
+      const isUser = message.role === "user";
+      return { role: message.role, content: String(message.content ?? "").slice(0, 40_000), images, attachments, omitted: isUser ? Math.max(0, declared - images.length) : 0, generated: isUser ? 0 : Math.min(declared, 4) };
     });
 }
 
 function textOf(message: Msg) {
   const imageNote = message.omitted ? `[${message.omitted} image(s) were attached to this message earlier and are no longer available.]` : "";
+  const generatedNote = message.generated ? `[You created ${message.generated} image(s) in this reply; the user can see them.]` : "";
   const fileText = message.attachments.map(textFromAttachment).join("\n");
-  return [message.content, imageNote, fileText].filter(Boolean).join("\n");
+  return [message.content, imageNote, generatedNote, fileText].filter(Boolean).join("\n");
 }
 
-async function persist(chatId: string, userId: string, messages: Msg[], assistantText: string, title?: string) {
+async function persist(chatId: string, userId: string, messages: Msg[], assistantText: string, title?: string, assistantImages: string[] = []) {
   const chat = await prisma.chat.findFirst({ where: { id: chatId, userId } });
   if (!chat) return;
   const existing = await prisma.message.count({ where: { chatId } });
@@ -94,10 +98,34 @@ async function persist(chatId: string, userId: string, messages: Msg[], assistan
       }))
     });
   }
-  await prisma.message.create({ data: { chatId, role: "assistant", content: assistantText } });
+  await prisma.message.create({ data: { chatId, role: "assistant", content: assistantText, images: assistantImages.length ? assistantImages : undefined } });
   if (existing === 0) {
     const first = messages[0];
     await prisma.chat.update({ where: { id: chatId }, data: { title: (title || fallbackTitle(first?.content || "", !!first?.attachments.length, !!first?.images.length)).slice(0, 80) } });
+  }
+}
+
+// Runs the image model for one request and stores the result. A failed image never fails the whole chat reply:
+// the user still gets the text, plus a short note about what went wrong.
+async function createImageReply(opts: { userId: string; chatId: string | null; request: ImageRequest; references: ImageRef[]; lang: "id" | "en" }) {
+  const { request, lang } = opts;
+  const caption = request.caption || (lang === "id" ? "Ini gambar yang kamu minta." : "Here is the image you asked for.");
+  try {
+    let references = opts.references;
+    if (!references.length && request.editLast && opts.chatId) {
+      const last = await prisma.generatedImage.findFirst({ where: { chatId: opts.chatId, userId: opts.userId }, orderBy: { createdAt: "desc" }, select: { mimeType: true, data: true } });
+      if (last) references = [{ mimeType: last.mimeType, data: Buffer.from(last.data).toString("base64") }];
+    }
+    const picture = await generateImage(request.prompt, references, request.aspectRatio);
+    const row = await prisma.generatedImage.create({
+      data: { userId: opts.userId, chatId: opts.chatId, mimeType: picture.mimeType, data: new Uint8Array(picture.data), prompt: request.prompt.slice(0, 2000) },
+      select: { id: true }
+    });
+    return { text: caption, urls: [`/api/images/${row.id}`] };
+  } catch (error) {
+    const info = describeAiError(error);
+    const note = lang === "id" ? `Gambar belum bisa dibuat: ${info.message}` : `I couldn't create the image: ${info.message}`;
+    return { text: [request.caption, note].filter(Boolean).join("\n\n"), urls: [] as string[] };
   }
 }
 
@@ -178,8 +206,23 @@ export async function POST(request: NextRequest) {
     const titlePromise: Promise<string | null> = isFirstMessage
       ? generateChatTitle(model, firstMessage.content, firstMessage.attachments.length > 0, firstMessage.images.length > 0)
       : Promise.resolve(null);
-    const [text, title] = await Promise.all([geminiChat(model, payload, undefined, thinkingLevel), titlePromise]);
-    if (chatId) await persist(chatId, user.id, messages, text, title || undefined);
+    // "Create image" mode skips the chat model and sends the user's own words to the image model.
+    // Otherwise the chat model decides: an image request comes back as a generate-image block.
+    const lang: "id" | "en" = body.lang === "id" ? "id" : "en";
+    const forcedPrompt = body.imageMode === true ? (latestPrompt || (latestUserMessage?.content || "").trim()) : "";
+    const [modelText, title] = await Promise.all([
+      forcedPrompt ? Promise.resolve("") : geminiChat(model, payload, undefined, thinkingLevel),
+      titlePromise
+    ]);
+    const imageRequest: ImageRequest | null = forcedPrompt ? { prompt: forcedPrompt, editLast: false, caption: "" } : extractImageRequest(modelText);
+    let text = modelText;
+    let imageUrls: string[] = [];
+    if (imageRequest) {
+      const references: ImageRef[] = (latestUserMessage?.images || []).map((image) => ({ mimeType: image.mime, data: image.data }));
+      const reply = await createImageReply({ userId: user.id, chatId: chatRecord ? chatId : null, request: imageRequest, references, lang });
+      text = reply.text; imageUrls = reply.urls;
+    }
+    if (chatId) await persist(chatId, user.id, messages, text, title || undefined, imageUrls);
 
     await updateMemoryFromConversation({
       userId: user.id,
@@ -188,7 +231,7 @@ export async function POST(request: NextRequest) {
       messages: messages.map(({ role, content }) => ({ role, content }))
     });
 
-    return NextResponse.json({ text, ...(title ? { title } : {}), attachments: latestUserMessage?.attachments || [], ...(searchResults.length ? { sources: searchResults } : {}) });
+    return NextResponse.json({ text, ...(imageUrls.length ? { images: imageUrls } : {}), ...(title ? { title } : {}), attachments: latestUserMessage?.attachments || [], ...(searchResults.length ? { sources: searchResults } : {}) });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Unsupported file type")) return NextResponse.json({ error: error.message }, { status: 415 });
     if (error instanceof Error && error.message.includes("must be 1 MB")) return NextResponse.json({ error: error.message }, { status: 413 });

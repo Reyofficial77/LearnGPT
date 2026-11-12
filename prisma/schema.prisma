@@ -24,6 +24,7 @@ model User {
   settings     UserSettings?
   memory       UserMemory?
   skills       UserSkill[]
+  generatedImages GeneratedImage[]
   @@unique([provider, providerId])
 }
 
@@ -49,6 +50,7 @@ model Chat {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   project   Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   messages  Message[]
+  generatedImages GeneratedImage[]
   @@index([userId, updatedAt])
   @@index([projectId, updatedAt])
 }
@@ -117,4 +119,18 @@ model UserSettings {
   webSearchEnabled  Boolean @default(false)
   speechLanguage    String  @default("auto")
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model GeneratedImage {
+  id        String   @id @default(cuid())
+  userId    String
+  chatId    String?
+  mimeType  String
+  data      Bytes
+  prompt    String   @db.Text
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat      Chat?    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  @@index([userId, createdAt])
+  @@index([chatId, createdAt])
 }

@@ -112,3 +112,8 @@ Custom skills can be uploaded from Settings or the `/` composer menu. Leave the 
 LearnGPT includes a Tauri 2 desktop shell. See [`DESKTOP.md`](./DESKTOP.md) for the GitHub Actions build process, local development commands, and platform notes. The Windows workflow builds both `.exe` (NSIS) and `.msi` installers and publishes them as a downloadable GitHub Actions artifact.
 
 The desktop shell loads `https://www.learngpt.my.id`; the Next.js backend, PostgreSQL database, and provider credentials stay on the hosted server. This keeps the Windows package small, but the app requires an internet connection and a working LearnGPT deployment. Google OAuth inside embedded webviews may be rejected by Google's policy; see the authentication note in `DESKTOP.md`.
+
+
+## Image generation
+
+Ask the AI to draw or edit a picture in any language, or turn on **+ → Create image** to send your next message straight to the image model. Pictures appear in the chat with **Preview** and **Download** buttons and are stored in the `GeneratedImage` table (served from `/api/images/{id}`, private to the owner unless the chat is shared). Attach a picture first to edit it. The model defaults to `gemini-2.5-flash-image`; override it with `GEMINI_MODEL_IMAGE`.

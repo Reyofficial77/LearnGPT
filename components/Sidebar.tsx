@@ -1,6 +1,6 @@
 "use client";
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Edit3, Folder, Globe, HelpCircle, Lock, LogOut, MoreHorizontal, Bookmark, MessageSquare, Plus, Search, Share2, Settings as SettingsIcon, Trash2, User, X } from "react-feather";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
+import { BookOpen, ChevronDown, ChevronUp, Edit3, Folder, Globe, HelpCircle, Lock, LogOut, MoreHorizontal, Bookmark, MessageSquare, Plus, Search, Share2, Settings as SettingsIcon, Sidebar as SidebarToggleIcon, Trash2, User, X } from "react-feather";
 import type { Chat, ProjectSummary } from "../lib/types";
 import { type Dict } from "../lib/i18n";
 
@@ -94,8 +94,17 @@ export default function Sidebar(props: Props) {
   const handleResizeMove = (event: ReactPointerEvent<HTMLDivElement>) => { if (resizePointer.current === event.pointerId) props.onResize(event.clientX); };
   const handleResizeUp = (event: ReactPointerEvent<HTMLDivElement>) => { if (resizePointer.current === event.pointerId) resizePointer.current = null; };
 
-  return <aside className={`sidebar ${props.open ? "sidebar-open" : "sidebar-collapsed"}`} style={{ width: props.open ? props.width : 76, flexBasis: props.open ? props.width : 76 }} aria-label={t.sidebarLabel}>
-    <div className="sidebar-top"><Brand compact onNavigate={props.onNewChat} /><div className="sidebar-top-actions"><button className="icon-button sidebar-collapse-trigger" onClick={props.onToggleSidebar} aria-label={t.toggleSidebar} title={t.toggleSidebar}>{props.open ? <ChevronLeft size={19}/> : <ChevronRight size={19}/>}</button><button className="icon-button close-sidebar" onClick={props.onClose} aria-label={t.closeMenu}><X size={20} /></button></div></div>
+  // Open: the width comes from --sb-w. Closed: CSS shrinks the sidebar to a slim rail that holds only
+  // the sidebar toggle, "New chat" and "Project" (no LearnGPT logo, no lists, no account block).
+  const sidebarStyle = props.open ? ({ "--sb-w": `${props.width}px` } as CSSProperties) : undefined;
+  return <aside className={`sidebar ${props.open ? "sidebar-open" : "sidebar-collapsed"}`} style={sidebarStyle} aria-label={t.sidebarLabel}>
+    <div className="sidebar-rail">
+      <button className="rail-button" onClick={props.onToggleSidebar} aria-label={t.toggleSidebar} title={t.toggleSidebar} aria-expanded={props.open}><SidebarToggleIcon size={19} /></button>
+      <button className="rail-button rail-primary" onClick={props.onNewChat} aria-label={t.newChat} title={t.newChat}><Plus size={19} /></button>
+      <button className="rail-button" onClick={props.onCreateProject} aria-label={t.project} title={t.project} aria-haspopup="dialog"><Folder size={19} /></button>
+    </div>
+    <div className="sidebar-full">
+    <div className="sidebar-top"><Brand compact onNavigate={props.onNewChat} /><div className="sidebar-top-actions"><button className="icon-button sidebar-collapse-trigger" onClick={props.onToggleSidebar} aria-label={t.toggleSidebar} title={t.toggleSidebar}><SidebarToggleIcon size={19}/></button><button className="icon-button close-sidebar" onClick={props.onClose} aria-label={t.closeMenu}><X size={20} /></button></div></div>
     <button className="new-chat" onClick={props.onNewChat} title={t.newChat}><Plus size={18} /><span>{t.newChat}</span></button>
     <div className="sidebar-scroll">
       <label className="sidebar-search"><Search size={16}/><input value={search} onChange={(event) => setSearch(event.target.value)} aria-label={t.searchChats} placeholder={t.searchPlaceholder}/>{search && <button type="button" onClick={() => setSearch("")} aria-label={t.close}><X size={14}/></button>}</label>
@@ -135,6 +144,7 @@ export default function Sidebar(props: Props) {
         <span className="profile-copy"><strong>{user.name}</strong>{user.email && <small>{user.email}</small>}</span>
         <ChevronUp size={16} className="account-chevron" />
       </button>
+    </div>
     </div>
     <div className="sidebar-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" aria-valuemin={190} aria-valuemax={380} aria-valuenow={props.width} tabIndex={0} onPointerDown={handleResizeDown} onPointerMove={handleResizeMove} onPointerUp={handleResizeUp} onPointerCancel={handleResizeUp} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); props.onResize(props.width - 12); } if (event.key === "ArrowRight") { event.preventDefault(); props.onResize(props.width + 12); } }} />
   </aside>;
