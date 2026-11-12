@@ -35,7 +35,7 @@ jobs:
               src-tauri/target/release/bundle/appimage/*.AppImage
 
           - name: macOS
-            os: macos-latest
+            os: macos-15
             artifact: macos
             path: |
               src-tauri/target/release/bundle/dmg/*.dmg
@@ -45,13 +45,20 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -81,7 +88,7 @@ jobs:
         run: npx --yes @tauri-apps/cli@2 build --no-sign
 
       - name: Upload desktop artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: LearnGPT-${{ matrix.artifact }}-${{ github.run_number }}
           path: ${{ matrix.path }}
@@ -94,46 +101,38 @@ jobs:
     timeout-minutes: 75
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
 
-      - uses: actions/setup-java@v4
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
-      # Avoid the old setup-android tools package installation.
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
 
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018"
-
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-
-      - name: Verify Android SDK
-        run: |
-          sdkmanager --list_installed
-          test -d "$ANDROID_HOME/platforms/android-35"
-          test -d "$ANDROID_HOME/ndk/27.2.12479018"
-
-      - name: Setup Rust Android targets
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Generate Android icons
         run: npx --yes @tauri-apps/cli@2 icon src-tauri/icons/icon.png
@@ -145,7 +144,7 @@ jobs:
         run: npx --yes @tauri-apps/cli@2 android build --apk --aab --ci
 
       - name: Upload Android artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: LearnGPT-Android-${{ github.run_number }}
           path: |
@@ -156,24 +155,29 @@ jobs:
 
   ios-simulator:
     name: iOS / iPadOS Simulator
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
 
-      - name: Setup Rust Apple targets
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
 
       - name: Install CocoaPods
-        run: |
-          sudo gem install cocoapods
+        run: sudo gem install cocoapods
 
       - name: Generate iOS icons
         run: npx --yes @tauri-apps/cli@2 icon src-tauri/icons/icon.png
@@ -184,18 +188,14 @@ jobs:
       - name: Build iOS Simulator app
         run: npx --yes @tauri-apps/cli@2 ios build --target aarch64-sim --ci
 
-      - name: Package iOS Simulator app
+      - name: Package simulator app
         run: |
           APP_PATH="$(find src-tauri/gen/apple -type d -name '*.app' -print -quit)"
-          if [ -z "$APP_PATH" ]; then
-            echo "iOS Simulator .app not found"
-            exit 1
-          fi
-
+          test -n "$APP_PATH"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" LearnGPT-iOS-Simulator.zip
 
       - name: Upload iOS Simulator artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: LearnGPT-iOS-Simulator-${{ github.run_number }}
           path: LearnGPT-iOS-Simulator.zip
