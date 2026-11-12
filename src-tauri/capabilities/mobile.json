@@ -1,0 +1,29 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "learngpt-mobile",
+  "description": "Minimal permissions for LearnGPT on iOS and Android.",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "iOS",
+    "android"
+  ],
+  "remote": {
+    "urls": [
+      "https://www.learngpt.my.id/**"
+    ]
+  },
+  "permissions": [
+    "core:event:default",
+    "deep-link:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://www.learngpt.my.id/**"
+        }
+      ]
+    }
+  ]
+}

@@ -2,9 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "learngpt-desktop",
   "description": "Minimal permissions for the trusted LearnGPT web application.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "remote": {
-    "urls": ["https://www.learngpt.my.id/**"]
+    "urls": [
+      "https://www.learngpt.my.id/**"
+    ]
   },
   "permissions": [
     "core:event:default",
@@ -12,8 +16,15 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [
-        { "url": "https://www.learngpt.my.id/**" }
+        {
+          "url": "https://www.learngpt.my.id/**"
+        }
       ]
     }
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macOS"
   ]
 }

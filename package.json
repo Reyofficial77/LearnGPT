@@ -8,7 +8,13 @@
     "start": "next start",
     "postinstall": "prisma generate",
     "desktop:dev": "npx --yes @tauri-apps/cli@2 dev",
-    "desktop:build": "npx --yes @tauri-apps/cli@2 build"
+    "desktop:build": "npx --yes @tauri-apps/cli@2 build",
+    "linux:build": "npx --yes @tauri-apps/cli@2 build",
+    "macos:build": "npx --yes @tauri-apps/cli@2 build",
+    "android:init": "npx --yes @tauri-apps/cli@2 android init --ci",
+    "android:build": "npx --yes @tauri-apps/cli@2 android build --apk --aab --ci",
+    "ios:init": "npx --yes @tauri-apps/cli@2 ios init --ci",
+    "ios:build:simulator": "npx --yes @tauri-apps/cli@2 ios build --target aarch64-sim --ci"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
